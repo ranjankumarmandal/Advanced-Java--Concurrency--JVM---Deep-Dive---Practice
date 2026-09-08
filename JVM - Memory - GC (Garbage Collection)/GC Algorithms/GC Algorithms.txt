@@ -1,0 +1,103 @@
+GC	             Main goal	                    GC threads	         Pause behavior	          Typical use
+Serial	          Simplicity	                       Single	          High	                Small applications
+Parallel	       Throughput	                       Multiple	          Higher	             Batch/compute workloads
+G1 (Very Imp)	  Balanced throughput + latency   Multiple/concurrent	  Controlled	        General-purpose server apps
+ZGC (Very Imp)	  Very low latency	                   Concurrent	       Extremely low	    Large, latency-sensitive services
+
+===============================
+
+Serial   → Simple
+Parallel → Throughput
+G1       → Balance
+ZGC      → Low latency
+
+=================================
+
+                 GC Evolution
+
+Serial
+  │
+  │ parallelize GC
+  ▼
+Parallel
+  │
+  │ reduce/control pauses
+  ▼
+G1
+  │
+  │ minimize latency further
+  ▼
+ZGC / Shenandoah
+
+================================
+
+We don't manage GC manually; we configure and tune the JVM so that GC behaves appropriately for your workload.
+
+==========
+
+What about System.gc()?
+You can technically write:
+
+System.gc();
+
+But this is not something you normally do in production code.
+
+============
+
+What happens in a real enterprise application?
+Imagine a Spring Boot service:
+
+             Your Java Application
+                     │
+        ┌────────────┴────────────┐
+        │                         │
+    Business Code             JVM
+                                  │
+                           Garbage Collector
+                                  │
+                    ┌─────────────┴─────────────┐
+                    │                           │
+                 Young GC                  Old/Mixed GC
+                    │                           │
+                 automatic                  automatic
+
+Your application developers generally focus on:
+
+Order order = orderService.createOrder();
+paymentService.process(order);
+
+while the JVM handles:
+
+Object allocation
+      ↓
+Objects become unreachable
+      ↓
+GC detects them
+      ↓
+Memory reclaimed
+      ↓
+Application continues
+
+But here's where senior engineers get involved
+If production monitoring shows:
+
+CPU ↑
+GC frequency ↑
+GC pause ↑
+Latency ↑
+Memory ↑
+
+then you investigate and potentially tune:
+
+Which GC?
+Heap size?
+-Xms / -Xmx?
+Pause target?
+Allocation rate?
+Object creation?
+Memory leak?
+GC logs?
+
+So the distinction is:
+
+"GC is automatic, but we choose/configure the collector and JVM parameters based on throughput, latency, heap size, and allocation behavior. We monitor GC and tune the application/JVM when necessary."
