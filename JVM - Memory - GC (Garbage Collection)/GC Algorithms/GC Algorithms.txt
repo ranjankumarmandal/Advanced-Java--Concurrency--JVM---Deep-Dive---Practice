@@ -1,3 +1,12 @@
+Java Garbage Algorithms (GC): We have total 4 major GC algorithms in Java -
+
+1. Serial   → Simple
+2. Parallel → Throughput
+3. G1       → Balance
+4. ZGC      → Low latency
+
+==============================
+
 GC	             Main goal	                    GC threads	         Pause behavior	          Typical use
 Serial	          Simplicity	                       Single	          High	                Small applications
 Parallel	       Throughput	                       Multiple	          Higher	             Batch/compute workloads
