@@ -1,3 +1,19 @@
+import java.util.ArrayList;
+
+public class ArrayListEmployeeExample {
+    public static void main(String[] args) {
+        ArrayList<Employee> employees = new ArrayList<>();
+
+        employees.add(new Employee(101, "Rahul", 50000));
+        employees.add(new Employee(102, "Priya", 65000));
+        employees.add(new Employee(103, "Arun", 45000));
+
+        for (Employee employee : employees) {
+            System.out.println(employee);
+        }
+    }
+}
+
 public class Employee {
     private int id;
     private String name;
