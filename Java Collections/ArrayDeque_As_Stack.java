@@ -1,4 +1,4 @@
-mport java.util.ArrayDeque;
+import java.util.ArrayDeque;
 
 public class ArrayDequeStackExample {
     public static void main(String[] args) {
