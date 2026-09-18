@@ -1,0 +1,1075 @@
+Java Concurrency — Short Interview Notes
+-----------------------------------------
+
+1. Concurrency vs Parallelism
+Concurrency
+
+Multiple tasks make progress during overlapping time periods.
+
+Tasks may execute interleaved on a single CPU/core.
+
+Main goal: structure/manage multiple tasks.
+
+Parallelism
+
+Multiple tasks execute at the same time on multiple CPU cores.
+
+Main goal: reduce execution time / increase throughput.
+
+Concurrency ≠ Parallelism
+Parallelism is one way to achieve concurrency.
+
+Example:
+
+Concurrency:  A → B → A → C → B
+              (interleaving)
+
+Parallelism:  Core 1 → A A A
+              Core 2 → B B B
+
+2. Ways to Achieve Concurrency
+At a high level:
+
+Concurrency
+├── Processes
+├── Threads
+├── Async / Non-blocking I/O
+├── Event-driven programming
+├── Actors / message passing
+└── Distributed systems
+
+In Java, most interviews focus on:
+
+Threads
+ExecutorService
+CompletableFuture
+ForkJoinPool
+Virtual Threads
+Concurrent Collections
+Locks / Synchronizers
+Atomic classes
+Java Memory Model
+
+3. Process vs Thread
+Process
+Independent execution unit.
+
+Own memory/address space.
+
+Expensive to create/switch.
+
+Communication requires IPC mechanisms.
+
+Thread
+Execution unit inside a process.
+
+Threads share process heap/resources.
+
+Has its own:
+
+Stack
+
+Program counter
+
+Thread-local state
+
+Cheaper than processes.
+
+Process
+ ├── Heap
+ ├── Resources
+ ├── Thread 1 → Stack
+ ├── Thread 2 → Stack
+ └── Thread 3 → Stack
+
+4. Java Thread
+A thread represents an independent path of execution.
+
+Thread t = new Thread(() -> {
+    System.out.println("Running");
+});
+
+t.start();
+
+Important:
+
+t.start(); // creates/schedules new thread
+t.run();   // normal method call; NO new thread
+
+5. Multithreading
+Multithreading = executing multiple threads within a process.
+
+Benefits:
+
+Responsiveness
+
+Better CPU utilization
+
+Overlap computation and I/O
+
+Higher throughput
+
+Resource sharing
+
+Problems:
+
+Race conditions
+
+Deadlocks
+
+Starvation
+
+Livelocks
+
+Context-switch overhead
+
+Visibility issues
+
+Contention
+
+6. Ways to Create/Manage Threads in Java
+Traditional
+extends Thread
+
+or
+
+implements Runnable
+
+or
+
+implements Callable<T>
+
+Preferred in production
+Use ExecutorService rather than manually creating threads.
+
+ExecutorService executor =
+    Executors.newFixedThreadPool(10);
+
+executor.submit(() -> doWork());
+
+executor.shutdown();
+
+Why?
+
+Task submission
+      ↓
+Executor
+      ↓
+Thread Pool
+      ↓
+Worker Threads
+
+Separates task from thread management.
+
+7. Executor Framework
+Core abstractions:
+
+Executor
+   ↓
+ExecutorService
+   ↓
+ThreadPoolExecutor
+
+Important methods:
+
+execute()
+submit()
+shutdown()
+shutdownNow()
+awaitTermination()
+
+Common pool types
+Executors.newFixedThreadPool(n)
+Executors.newCachedThreadPool()
+Executors.newSingleThreadExecutor()
+Executors.newScheduledThreadPool(n)
+
+For SSE-level interviews, know that Executors factory methods can hide important queue/thread-pool characteristics. Be comfortable constructing ThreadPoolExecutor explicitly.
+
+8. Thread Pool
+A thread pool maintains reusable worker threads.
+
+Instead of:
+
+Request → create thread
+Request → create thread
+Request → create thread
+
+use:
+
+Requests
+   ↓
+Work Queue
+   ↓
+Thread Pool
+ ├── T1
+ ├── T2
+ ├── T3
+ └── T4
+
+Advantages:
+
+Avoid thread creation overhead
+
+Control concurrency
+
+Bound resource usage
+
+Queue tasks
+
+Improve throughput
+
+Key parameters:
+
+corePoolSize
+maximumPoolSize
+keepAliveTime
+workQueue
+ThreadFactory
+RejectedExecutionHandler
+
+9. Runnable vs Callable
+Runnable
+Runnable r = () -> doSomething();
+
+No return value
+
+Cannot directly throw checked exception
+
+Callable
+Callable<Integer> c = () -> calculate();
+
+Returns value
+
+Can throw checked exception
+
+Future<Integer> future = executor.submit(c);
+
+Integer result = future.get();
+
+10. Future
+Future<T> represents the result of an asynchronous computation.
+
+Future<String> f = executor.submit(() -> fetch());
+
+String result = f.get();
+
+Problem:
+
+f.get();
+
+can block.
+
+Limitations of traditional Future:
+
+Difficult composition
+
+Difficult chaining
+
+Blocking retrieval
+
+Poor error-composition model
+
+This is where CompletableFuture becomes important.
+
+11. CompletableFuture
+Used for asynchronous computation and composition.
+
+CompletableFuture
+    .supplyAsync(() -> fetchUser())
+    .thenApply(user -> user.getName())
+    .thenAccept(System.out::println);
+
+Important operations:
+
+thenApply       → transform result
+thenCompose     → flatten dependent async operation
+thenCombine     → combine independent operations
+allOf           → wait for multiple futures
+anyOf           → first completed
+exceptionally   → recover
+handle          → success + failure handling
+whenComplete    → observe completion
+
+thenApply vs thenCompose
+thenApply:
+A → B
+
+thenCompose:
+A → Future<B>
+
+If you already have an async operation, thenCompose usually avoids nested futures.
+
+12. CompletableFuture Execution
+Two important forms:
+
+thenApply(...)
+thenApplyAsync(...)
+
+Async variants may execute asynchronously using an executor, commonly the ForkJoinPool.commonPool() when no executor is supplied.
+
+For production code, explicitly providing the appropriate executor can be important:
+
+thenApplyAsync(fn, executor)
+
+13. Synchronization
+Synchronization coordinates access to shared mutable state.
+
+Common mechanisms:
+
+synchronized
+Lock
+ReadWriteLock
+StampedLock
+Semaphore
+CountDownLatch
+CyclicBarrier
+Phaser
+Atomic classes
+Concurrent Collections
+
+14. synchronized
+Provides:
+
+Mutual exclusion
+
+Memory visibility / happens-before guarantees
+
+synchronized void increment() {
+    count++;
+}
+
+or:
+
+synchronized (lock) {
+    count++;
+}
+
+Only one thread can hold the same monitor at a time.
+
+15. Race Condition
+Occurs when correctness depends on unpredictable interleaving of threads accessing shared state.
+
+Example:
+
+count++;
+
+is conceptually:
+
+read count
+add 1
+write count
+
+Two threads can both read the same value.
+
+T1: read 10
+T2: read 10
+T1: write 11
+T2: write 11
+
+Expected: 12
+Actual:   11
+
+16. Atomicity
+An operation is atomic when it appears indivisible to other threads.
+
+Examples:
+
+AtomicInteger counter = new AtomicInteger();
+
+counter.incrementAndGet();
+
+Common atomic classes:
+
+AtomicInteger
+AtomicLong
+AtomicBoolean
+AtomicReference
+LongAdder
+LongAccumulator
+
+17. volatile
+volatile primarily provides:
+
+Visibility
+
+Ordering constraints
+
+It does not generally provide compound-operation atomicity.
+
+volatile boolean running = true;
+
+If one thread writes:
+
+running = false;
+
+other threads can observe the updated value.
+
+But:
+
+volatile int count;
+
+count++; // NOT atomic
+
+because it is read-modify-write.
+
+18. Java Memory Model — JMM
+The Java Memory Model defines how threads interact with memory and what values they are guaranteed to observe.
+
+Three concepts are especially important:
+
+Atomicity
+Visibility
+Ordering
+
+Visibility
+One thread's write becomes observable by another.
+
+Ordering
+Compiler/JIT/CPU may reorder operations unless constrained by the memory model.
+
+Happens-before
+If A happens-before B, the effects of A are guaranteed to be visible to B.
+
+Important happens-before relationships include:
+
+unlock → subsequent lock on same monitor
+volatile write → subsequent volatile read
+Thread.start() → actions in started thread
+actions in thread → successful Thread.join()
+
+19. synchronized vs volatile
+synchronized	volatile
+Visibility	✅	✅
+Mutual exclusion	✅	❌
+Compound atomicity	✅	❌
+Locking	✅	❌
+Typical use	Critical section	State/flag visibility
+
+Interview phrase:
+
+volatile is about visibility and ordering; synchronized additionally provides mutual exclusion.
+
+20. Lock
+java.util.concurrent.locks.Lock
+
+Example:
+
+Lock lock = new ReentrantLock();
+
+lock.lock();
+try {
+    // critical section
+} finally {
+    lock.unlock();
+}
+
+Advantages over basic synchronized:
+
+tryLock()
+lockInterruptibly()
+timed lock acquisition
+multiple Conditions
+
+21. ReentrantLock
+Reentrant means the same thread can acquire the lock multiple times.
+
+Thread T
+  ↓
+lock()
+  ↓
+method A
+  ↓
+method B
+  ↓
+lock() again
+
+It must release correspondingly.
+
+22. ReadWriteLock
+Useful when:
+
+Many readers
+Few writers
+
+Provides:
+
+Read Lock  → multiple readers
+Write Lock → exclusive
+
+But don't automatically assume it improves performance—contention, workload, and read/write duration matter.
+
+23. StampedLock
+Supports:
+
+Read lock
+Write lock
+Optimistic read
+
+Optimistic reads can reduce locking overhead when writes are uncommon.
+
+But StampedLock is not reentrant.
+
+24. Semaphore
+Controls the number of threads allowed to access a resource.
+
+Semaphore semaphore = new Semaphore(10);
+
+Conceptually:
+
+10 permits
+
+Thread → acquire → resource
+Thread → release → permit returned
+
+Useful for limiting concurrent access to:
+
+Connections
+
+External APIs
+
+Expensive resources
+
+25. CountDownLatch
+Allows one or more threads to wait until a counter reaches zero.
+
+CountDownLatch latch = new CountDownLatch(3);
+
+Worker 1 → countDown()
+Worker 2 → countDown()
+Worker 3 → countDown()
+
+Main → await()
+             ↓
+          continue
+
+One-shot synchronization mechanism.
+
+26. CyclicBarrier
+Allows a fixed group of threads to wait for each other.
+
+T1 ─┐
+T2 ─┼── barrier ──→ continue
+T3 ─┘
+
+Unlike CountDownLatch, a barrier can be reused.
+
+27. Concurrent Collections
+Important ones:
+
+ConcurrentHashMap
+CopyOnWriteArrayList
+ConcurrentLinkedQueue
+BlockingQueue
+ConcurrentSkipListMap
+ConcurrentSkipListSet
+
+ConcurrentHashMap
+Thread-safe map optimized for concurrent access.
+
+ConcurrentHashMap<K, V>
+
+Prefer atomic compound operations when appropriate:
+
+map.computeIfAbsent(key, k -> createValue());
+
+28. BlockingQueue
+Designed for producer-consumer scenarios.
+
+Producer
+   ↓
+BlockingQueue
+   ↓
+Consumer
+
+Methods include:
+
+put()
+take()
+offer()
+poll()
+
+put() can block when capacity is unavailable; take() can block when empty.
+
+29. CopyOnWriteArrayList
+Excellent when:
+
+Reads >> Writes
+
+Every mutation creates a new underlying array.
+
+Good examples:
+
+Listener lists
+
+Configuration snapshots
+
+Mostly-read collections
+
+Bad for write-heavy workloads.
+
+30. Thread Safety
+A class is thread-safe if its behavior remains correct when accessed concurrently according to its contract.
+
+Ways to achieve it:
+
+Immutability
+Synchronization
+Locks
+Atomics
+Thread confinement
+Concurrent collections
+Message passing
+Stateless design
+
+Immutable objects
+Often the easiest concurrency strategy.
+
+Example:
+
+final class User {
+    private final String name;
+    ...
+}
+
+If state never changes, synchronization requirements can be dramatically reduced.
+
+31. Thread Confinement
+Keep mutable state owned by one thread.
+
+Thread 1 → owns object A
+Thread 2 → owns object B
+
+No sharing → fewer synchronization problems.
+
+ThreadLocal is one mechanism for thread-confined state.
+
+32. ThreadLocal
+Provides per-thread storage.
+
+ThreadLocal<String> context =
+    ThreadLocal.withInitial(() -> "default");
+
+Conceptually:
+
+Thread 1 → value A
+Thread 2 → value B
+Thread 3 → value C
+
+Important with thread pools: clean up ThreadLocal state when appropriate because worker threads are reused.
+
+33. Deadlock
+Two or more threads wait forever for each other's locks.
+
+T1: holds A → waits for B
+T2: holds B → waits for A
+
+Four Coffman conditions:
+
+1. Mutual exclusion
+2. Hold and wait
+3. No preemption
+4. Circular wait
+
+Common prevention strategy:
+
+Always acquire multiple locks in a globally consistent order.
+
+34. Livelock
+Threads are active but make no useful progress.
+
+T1 → gives way to T2
+T2 → gives way to T1
+T1 → gives way again
+...
+
+Unlike deadlock, threads aren't necessarily blocked.
+
+35. Starvation
+A thread waits indefinitely because other threads continually get access to required resources.
+
+Possible causes:
+
+Unfair locking
+
+Excessive priority differences
+
+Poor scheduling
+
+Resource monopolization
+
+36. Context Switching
+CPU switches execution from one thread to another.
+
+Costs include:
+
+Saving/restoring CPU state
+
+Scheduler overhead
+
+Cache effects
+
+Reduced CPU efficiency
+
+Therefore:
+
+More threads ≠ automatically more performance.
+
+37. CPU-Bound vs I/O-Bound
+CPU-bound
+Examples:
+
+Sorting
+Compression
+Complex calculations
+Image processing
+
+Performance depends primarily on CPU.
+
+Usually use a bounded pool related to available CPU resources.
+
+I/O-bound
+Examples:
+
+Database
+HTTP calls
+File I/O
+Network calls
+
+Threads may spend substantial time waiting.
+
+Concurrency strategy can therefore differ significantly.
+
+38. ForkJoinPool
+Designed for tasks that can be recursively divided into smaller tasks.
+
+Big Task
+ ├── Task A
+ │    ├── A1
+ │    └── A2
+ └── Task B
+      ├── B1
+      └── B2
+
+Uses work stealing.
+
+One worker can steal work from another worker's queue when idle.
+
+Used by:
+
+Parallel streams
+
+CompletableFuture async operations by default in many cases
+
+Explicit Fork/Join workloads
+
+39. Parallel Streams
+list.parallelStream()
+    .map(...)
+    .filter(...)
+    .toList();
+
+Can use multiple threads.
+
+Good candidate when operations are:
+
+Independent
+
+CPU-intensive
+
+Suitable for splitting
+
+Potential problems:
+
+Shared mutable state
+
+Blocking I/O
+
+Common pool contention
+
+Small datasets where overhead dominates
+
+Ordering/collector considerations
+
+40. Virtual Threads — Java 21+
+Very important for modern Java interviews.
+
+Virtual threads are lightweight threads managed by the JVM rather than being directly mapped one-to-one to OS threads.
+
+Thread.startVirtualThread(() -> {
+    handleRequest();
+});
+
+Or:
+
+try (var executor =
+         Executors.newVirtualThreadPerTaskExecutor()) {
+
+    executor.submit(() -> handleRequest());
+}
+
+Useful especially for high-concurrency, I/O-heavy applications.
+
+Conceptually:
+
+Many virtual threads
+        ↓
+Few carrier/platform threads
+        ↓
+CPU
+
+They make thread-per-task designs much more scalable for many blocking workloads.
+
+They do not make CPU computation faster.
+
+41. Platform Thread vs Virtual Thread
+Platform Thread	Virtual Thread
+Managed by	OS/JVM	JVM
+Cost	Higher	Much lower
+Huge concurrency	Limited	Much higher
+I/O-heavy workloads	Can require pools	Very suitable
+CPU speed	Same underlying CPU	Same underlying CPU
+Thread-per-request	Can be expensive	Much more practical
+
+42. Structured Concurrency
+Modern Java direction for managing related concurrent tasks as a unit.
+
+Concept:
+
+Parent task
+ ├── Child task A
+ ├── Child task B
+ └── Child task C
+
+The lifetime and failure handling of child tasks are tied to the parent scope.
+
+For interviews, understand the motivation:
+
+Make concurrent task lifecycles, cancellation, errors, and ownership easier to reason about.
+
+43. Async vs Multithreading
+Asynchronous programming means the caller doesn't necessarily wait synchronously for an operation to complete.
+
+Multithreading means multiple threads execute.
+
+They are related but not identical.
+
+You can have:
+
+Async + threads
+Async + event loop
+Concurrency + single thread
+
+For example, non-blocking event-loop systems can handle many concurrent operations with relatively few threads.
+
+44. Blocking vs Non-blocking
+Blocking
+Thread waits for operation:
+
+result = databaseCall(); // thread waits
+
+Non-blocking
+Thread can continue doing other work while operation progresses.
+
+Commonly associated with:
+
+Callbacks
+Futures
+CompletableFuture
+Reactive programming
+NIO
+Event loops
+
+45. Atomic CAS
+Many Java atomic operations use CAS — Compare-And-Set.
+
+Concept:
+
+Expected = 10
+Actual   = 10
+
+CAS(10, 11)
+       ↓
+success
+
+If another thread changed it:
+
+Expected = 10
+Actual   = 12
+
+CAS(10, 11)
+       ↓
+failure
+
+CAS enables many lock-free/non-blocking algorithms.
+
+46. ABA Problem
+With CAS:
+
+A → B → A
+
+A thread may see A and incorrectly assume nothing changed.
+
+Solutions can include versioning/stamps, e.g. concepts represented by:
+
+AtomicStampedReference
+
+47. Lock-Free vs Wait-Free
+Lock-free
+System as a whole makes progress even if individual threads can starve.
+
+Wait-free
+Every thread completes its operation within a bounded number of steps.
+
+Generally:
+
+Wait-free → stronger guarantee
+Lock-free → weaker guarantee
+
+Know these for senior-level concurrency discussions.
+
+48. Producer-Consumer
+Classic concurrency pattern:
+
+Producer(s)
+    ↓
+ BlockingQueue
+    ↓
+Consumer(s)
+
+Benefits:
+
+Decoupling
+
+Backpressure/buffering
+
+Controlled concurrency
+
+Typical Java building block:
+
+BlockingQueue<Task>
+
+49. Backpressure
+When producers generate work faster than consumers can process it:
+
+Producer rate > Consumer rate
+             ↓
+        queue grows
+             ↓
+       memory/resource risk
+
+Backpressure means controlling production/acceptance of work so the system remains stable.
+
+Very relevant for high-scale backend/SSE/event-driven systems.
+
+50. Common Interview Traps
+Remember these:
+
+1. start() ≠ run()
+
+2. volatile ≠ atomic
+
+3. ConcurrentHashMap ≠ every compound operation automatically safe
+
+4. More threads ≠ more performance
+
+5. parallelStream() ≠ automatically faster
+
+6. synchronized provides visibility as well as mutual exclusion
+
+7. CompletableFuture ≠ automatically non-blocking end-to-end
+
+8. Virtual threads ≠ faster CPU execution
+
+9. Thread pool size depends on workload
+
+10. Lock-free ≠ wait-free
+
+11. Async ≠ multithreading
+
+12. Concurrency ≠ parallelism
+
+51. SSE-Specific Concurrency Angle
+For Senior Software Engineer interviews, connect concurrency to real systems.
+
+For an SSE server:
+
+Client 1 ──┐
+Client 2 ──┤
+Client 3 ──┼──→ Event Publisher → SSE Connections
+Client N ──┘
+
+Think about:
+
+Thousands of concurrent connections
+
+I/O vs CPU-bound work
+
+Connection lifecycle
+
+Thread-per-connection vs event-loop vs virtual threads
+
+Backpressure
+
+Slow clients
+
+Shared event state
+
+Concurrent collections
+
+Connection cleanup
+
+Cancellation
+
+Timeouts
+
+Executor sizing
+
+Avoiding blocking operations on event-loop threads
+
+Graceful shutdown
+
+Failure isolation
+
+A senior-level answer should therefore move beyond:
+
+"I'll use synchronized."
+
+and toward:
+
+"What state is shared? Can I make it immutable? Can I avoid sharing? Is the workload CPU- or I/O-bound? What's the concurrency limit? What happens under overload? How are cancellation, backpressure and lifecycle handled?"
+
+52. One-Page Mental Model
+                 JAVA CONCURRENCY
+                       │
+        ┌──────────────┴──────────────┐
+        │                             │
+   EXECUTION                      COORDINATION
+        │                             │
+ Threads / Virtual Threads       synchronized
+ ExecutorService                 Lock
+ ThreadPoolExecutor              Semaphore
+ CompletableFuture               Latch
+ ForkJoinPool                    Barrier
+ Parallel Streams                Atomic
+ Async / Non-blocking            Concurrent Collections
+        │
+        └──────────────┬──────────────┘
+                       │
+                 JAVA MEMORY MODEL
+                       │
+             ┌─────────┼─────────┐
+             │         │         │
+          Atomicity Visibility Ordering
+                       │
+                  happens-before
+                       │
+              ┌────────┴────────┐
+              │                 │
+           Problems          Solutions
+              │                 │
+         Race condition      Immutability
+         Deadlock            Synchronization
+         Starvation          CAS / Atomics
+         Livelock             Thread confinement
+                              Message passing
