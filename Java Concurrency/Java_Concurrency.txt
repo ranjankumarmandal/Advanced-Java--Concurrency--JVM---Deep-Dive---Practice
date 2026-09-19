@@ -1073,3 +1073,282 @@ and toward:
          Starvation          CAS / Atomics
          Livelock             Thread confinement
                               Message passing
+
+53. Thread Interruption
+Threads can be interrupted to signal cancellation.
+
+Thread t = new Thread(() -> {
+    while (!Thread.currentThread().isInterrupted()) {
+        // do work
+    }
+});
+
+t.start();
+t.interrupt(); // sets interrupt flag
+
+Important patterns:
+
+if (Thread.interrupted()) {
+    // handle interruption
+    // clears the flag
+}
+
+Blocking methods like sleep(), wait(), join() throw InterruptedException when interrupted.
+
+Best practice: propagate InterruptedException or restore interrupt status.
+
+54. Daemon Threads
+Daemon threads are background threads that don't prevent JVM exit.
+
+Thread daemon = new Thread(() -> {
+    while (true) {
+        // background work
+    }
+});
+daemon.setDaemon(true);
+daemon.start();
+
+When all non-daemon threads finish, JVM exits even if daemon threads are running.
+
+Use cases: background cleanup, monitoring, periodic tasks.
+
+55. Thread Priority
+Each thread has a priority (1-10).
+
+t.setPriority(Thread.MAX_PRIORITY); // 10
+t.setPriority(Thread.NORM_PRIORITY); // 5
+t.setPriority(Thread.MIN_PRIORITY); // 1
+
+Important: Thread priority is only a hint to the scheduler. Don't rely on it for correctness.
+
+56. Fair vs Unfair Locks
+ReentrantLock can be fair or unfair.
+
+// Unfair (default, faster)
+Lock unfairLock = new ReentrantLock();
+
+// Fair (threads acquire in FIFO order)
+Lock fairLock = new ReentrantLock(true);
+
+Fair locks prevent starvation but have higher overhead due to queue management.
+
+Unfair locks allow barging and are generally faster but may cause starvation.
+
+57. CompletableFuture Error Handling
+Important error handling patterns:
+
+CompletableFuture.supplyAsync(() -> riskyOperation())
+    .exceptionally(ex -> {
+        // recover from error
+        return defaultValue;
+    });
+
+CompletableFuture.supplyAsync(() -> riskyOperation())
+    .handle((result, ex) -> {
+        if (ex != null) {
+            // handle error
+            return fallback;
+        }
+        return result;
+    });
+
+CompletableFuture.supplyAsync(() -> riskyOperation())
+    .whenComplete((result, ex) -> {
+        // observe result or error
+    });
+
+58. ExecutorService Shutdown Patterns
+Proper shutdown is critical for production.
+
+ExecutorService executor = Executors.newFixedThreadPool(10);
+
+// Graceful shutdown
+executor.shutdown(); // stops accepting new tasks
+try {
+    if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
+        executor.shutdownNow(); // force shutdown
+    }
+} catch (InterruptedException e) {
+    executor.shutdownNow();
+    Thread.currentThread().interrupt();
+}
+
+shutdownNow() returns list of unexecuted tasks.
+
+59. Thread Dump Analysis
+Thread dumps help diagnose concurrency issues.
+
+Generating thread dumps:
+
+jstack <pid> > thread_dump.txt
+
+Or programmatically:
+
+Map<Thread, StackTraceElement[]> allStackTraces = Thread.getAllStackTraces();
+
+Common thread states to understand:
+
+RUNNABLE: executing or ready to run
+BLOCKED: waiting for monitor lock
+WAITING: waiting indefinitely (wait(), join(), park())
+TIMED_WAITING: waiting with timeout (sleep(), wait(timeout))
+TERMINATED: completed execution
+
+60. ScopedValue — Java 21+
+Modern alternative to ThreadLocal for structured concurrency.
+
+ScopedValue<String> CONTEXT = ScopedValue.newInstance();
+
+ScopedValue.where(CONTEXT, "user123")
+    .run(() -> {
+        // CONTEXT is bound here
+        doWork();
+    });
+
+Unlike ThreadLocal, ScopedValue is automatically unbound when the scope ends.
+
+Better for structured concurrency and virtual threads.
+
+61. Thread Pool Sizing Guidelines
+CPU-bound tasks:
+
+pool size ≈ number of CPU cores
+
+I/O-bound tasks:
+
+pool size can be larger, often based on latency ratio
+
+Formula:
+
+threads = cores * (1 + wait_time / compute_time)
+
+Or use dynamic sizing with newCachedThreadPool or custom policies.
+
+62. ConcurrentHashMap Internals
+Important implementation details:
+
+Java 7: Segment-based locking (striped locks)
+Java 8+: Bucket-level locking with CAS + synchronized
+
+Key operations:
+
+put(): uses CAS for empty buckets, synchronized for collisions
+get(): lock-free (volatile reads)
+computeIfAbsent(): atomic compound operation
+
+Size calculation: uses LongAdder for better performance under contention.
+
+63. Phaser
+Advanced synchronization barrier for dynamic thread sets.
+
+Phaser phaser = new Phaser();
+
+phaser.register(); // register main thread
+
+for (int i = 0; i < n; i++) {
+    phaser.register();
+    new Thread(() -> {
+        doWork();
+        phaser.arriveAndAwaitAdvance();
+    }).start();
+}
+
+phaser.arriveAndAwaitAdvance(); // wait for all
+
+Unlike CyclicBarrier, Phaser supports:
+- Dynamic party registration
+- Multiple phases
+- Termination
+
+64. Exchanger
+Allows two threads to exchange objects at a synchronization point.
+
+Exchanger<String> exchanger = new Exchanger<>();
+
+// Thread 1
+String myData = "data1";
+String received = exchanger.exchange(myData);
+
+// Thread 2
+String myData = "data2";
+String received = exchanger.exchange(myData);
+
+Use case: genetic algorithms, pipeline handoffs.
+
+65. BlockingQueue Implementations
+Different implementations for different needs:
+
+ArrayBlockingQueue: bounded, array-backed
+LinkedBlockingQueue: optionally bounded, linked nodes
+PriorityBlockingQueue: priority-ordered
+DelayQueue: elements with delay
+SynchronousQueue: direct handoff (no storage)
+LinkedTransferQueue: tryTransfer, transfer operations
+
+66. CompletableFuture Composition Patterns
+Advanced composition:
+
+// Multiple independent futures
+CompletableFuture.allOf(f1, f2, f3).join();
+
+// First to complete
+CompletableFuture.anyOf(f1, f2, f3).join();
+
+// Timeout
+CompletableFuture.supplyAsync(() -> longOperation())
+    .orTimeout(5, TimeUnit.SECONDS);
+
+// Retry pattern
+CompletableFuture.supplyAsync(() -> operation())
+    .exceptionallyCompose(ex -> retry());
+
+67. Virtual Threads Limitations
+Virtual threads have limitations:
+
+- Not suitable for CPU-bound work (doesn't make it faster)
+- Should not use synchronized blocks (can pin carrier threads)
+- ThreadLocal usage can cause memory bloat
+- Not compatible with some native code
+- Thread priorities not supported
+
+Best for: I/O-bound, high-concurrency, blocking operations.
+
+68. Reactive Programming with Java
+While not core Java, important to know:
+
+Project Reactor / RxJava provide:
+
+Flux<T>: 0..N elements
+Mono<T>: 0..1 elements
+
+Flux.just(1, 2, 3)
+    .map(i -> i * 2)
+    .filter(i -> i > 2)
+    .subscribe();
+
+Benefits: non-blocking, backpressure-aware, composable.
+
+69. Performance Monitoring
+Key metrics for concurrent systems:
+
+- Thread pool utilization
+- Queue lengths
+- Rejection rates
+- Task execution times
+- Context switch rate
+- Lock contention
+- GC impact under concurrency
+
+Tools: JMX, VisualVM, YourKit, async-profiler.
+
+70. Common Concurrency Bugs
+Watch out for:
+
+- Double-checked locking without volatile
+- Using notify() instead of notifyAll()
+- Forgetting to unlock in finally block
+- Holding locks during I/O
+- String interning causing contention
+- Improper use of ThreadLocal with thread pools
+- Missing volatile for flags
+- Incorrect happens-before assumptions
