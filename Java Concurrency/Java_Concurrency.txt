@@ -1345,10 +1345,72 @@ Tools: JMX, VisualVM, YourKit, async-profiler.
 Watch out for:
 
 - Double-checked locking without volatile
+  Can lead to partially constructed objects being visible to other threads.
+
 - Using notify() instead of notifyAll()
+  May wake the wrong thread, causing missed signals.
+
 - Forgetting to unlock in finally block
+  Can cause deadlocks if exceptions occur.
+
 - Holding locks during I/O
+  Increases contention and can cause performance issues.
+
 - String interning causing contention
+  Interned strings are shared globally and can become contention points.
+
 - Improper use of ThreadLocal with thread pools
+  ThreadLocal values can leak across tasks when threads are reused.
+
 - Missing volatile for flags
+  Changes may not be visible to other threads.
+
 - Incorrect happens-before assumptions
+  Assuming visibility without proper synchronization.
+
+71. Final Summary — Key Takeaways
+For Java concurrency interviews, remember:
+
+Core Concepts
+- Concurrency ≠ Parallelism
+- Thread safety requires atomicity, visibility, and ordering
+- The Java Memory Model defines these guarantees
+
+Execution Models
+- ExecutorService > manual thread creation
+- CompletableFuture for async composition
+- ForkJoinPool for recursive divide-and-conquer
+- Virtual threads for I/O-heavy, high-concurrency workloads
+
+Synchronization
+- synchronized: mutual exclusion + visibility
+- volatile: visibility + ordering only
+- Lock: more flexible than synchronized
+- Atomic classes: lock-free operations
+
+Thread Safety Strategies
+- Immutability (simplest)
+- Thread confinement
+- Synchronization/locks
+- Concurrent collections
+- Atomic operations
+
+Common Pitfalls
+- More threads ≠ more performance
+- volatile ≠ atomic
+- ConcurrentHashMap ≠ automatic compound operation safety
+- Virtual threads ≠ faster CPU execution
+
+Best Practices
+- Always release locks in finally blocks
+- Handle InterruptedException properly
+- Use appropriate thread pool sizes for workload
+- Prefer immutable objects when possible
+- Understand the difference between CPU-bound and I/O-bound workloads
+
+Modern Java (21+)
+- Virtual threads for scalable I/O
+- ScopedValue for structured concurrency
+- Structured concurrency for task lifecycle management
+
+Remember: The right concurrency approach depends on your specific workload, resource constraints, and correctness requirements.
