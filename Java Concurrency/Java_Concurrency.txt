@@ -1414,3 +1414,1200 @@ Modern Java (21+)
 - Structured concurrency for task lifecycle management
 
 Remember: The right concurrency approach depends on your specific workload, resource constraints, and correctness requirements.
+
+72. wait() and notify() / notifyAll()
+These are low-level synchronization mechanisms for inter-thread communication.
+
+synchronized (lock) {
+    while (conditionNotMet) {
+        lock.wait(); // releases lock and waits
+    }
+    // do work
+}
+
+synchronized (lock) {
+    // change condition
+    lock.notify(); // wake one waiting thread
+    // or
+    lock.notifyAll(); // wake all waiting threads
+}
+
+Important patterns:
+- Always call wait() in a loop checking the condition
+- Always hold the lock when calling wait(), notify(), notifyAll()
+- Prefer notifyAll() over notify() unless you're certain only one thread needs to wake
+- Use Condition objects with Lock for more flexibility
+
+73. Condition
+Condition provides finer-grained control than wait/notify.
+
+Lock lock = new ReentrantLock();
+Condition notEmpty = lock.newCondition();
+Condition notFull = lock.newCondition();
+
+lock.lock();
+try {
+    while (queue.isEmpty()) {
+        notEmpty.await(); // wait until not empty
+    }
+    // consume
+    notFull.signal(); // signal producers
+} finally {
+    lock.unlock();
+}
+
+Advantages over wait/notify:
+- Multiple conditions per lock
+- Can interrupt waiting threads
+- Timed waits
+- Fair/non-fair options
+
+74. Double-Checked Locking
+Pattern for lazy initialization with reduced synchronization overhead.
+
+private volatile Singleton instance;
+
+public Singleton getInstance() {
+    if (instance == null) { // first check (no locking)
+        synchronized (this) {
+            if (instance == null) { // second check (with locking)
+                instance = new Singleton();
+            }
+        }
+    }
+    return instance;
+}
+
+Critical: volatile is required to prevent partial construction visibility issues.
+
+75. Memory Ordering and Reordering
+Compilers, JVM, and CPUs may reorder operations for performance.
+
+int x = 0;
+int y = 0;
+
+// Thread 1
+x = 1;
+y = 1;
+
+// Thread 2
+if (y == 1) {
+    // x might still be 0 due to reordering!
+    print(x);
+}
+
+Synchronization mechanisms (volatile, synchronized, final) establish ordering constraints to prevent problematic reordering.
+
+76. final Fields and Safe Publication
+final fields provide safe publication guarantees.
+
+class SafePublication {
+    private final int x;
+    private final int y;
+
+    public SafePublication(int x, int y) {
+        this.x = x;
+        this.y = y;
+    }
+}
+
+When a constructor completes, all final fields are guaranteed to be visible to other threads without additional synchronization.
+
+77. Thread Groups
+ThreadGroup allows grouping threads for management.
+
+ThreadGroup group = new ThreadGroup("Workers");
+Thread t1 = new Thread(group, () -> work());
+Thread t2 = new Thread(group, () -> work());
+
+group.interrupt(); // interrupt all threads in group
+
+Note: ThreadGroup is largely legacy; modern code typically uses ExecutorService.
+
+78. Uncaught Exception Handlers
+Handle exceptions that escape thread execution.
+
+Thread.setDefaultUncaughtExceptionHandler((t, e) -> {
+    log.error("Uncaught exception in thread " + t.getName(), e);
+});
+
+Thread t = new Thread(() -> {
+    throw new RuntimeException("Oops");
+});
+t.setUncaughtExceptionHandler((thread, ex) -> {
+    // handle specific thread exceptions
+});
+
+79. Thread States and Lifecycle
+Thread states in Java:
+
+NEW: Thread created but not started
+RUNNABLE: Thread executing or ready to execute
+BLOCKED: Waiting for monitor lock
+WAITING: Waiting indefinitely (wait(), join(), park())
+TIMED_WAITING: Waiting with timeout (sleep(), wait(timeout))
+TERMINATED: Thread completed execution
+
+Understanding these states is crucial for debugging concurrency issues.
+
+80. Thread.join()
+join() waits for a thread to complete.
+
+Thread t = new Thread(() -> longTask());
+t.start();
+t.join(); // blocks until t completes
+
+join(long millis) allows timed waits.
+
+Useful for coordinating dependent tasks.
+
+81. Thread.yield()
+yield() hints to the scheduler that the current thread is willing to yield its CPU.
+
+Thread.yield();
+
+Note: yield() is only a hint; the scheduler may ignore it. Rarely useful in practice.
+
+82. Thread.sleep()
+sleep() pauses thread execution without releasing locks.
+
+try {
+    Thread.sleep(1000); // sleep for 1 second
+} catch (InterruptedException e) {
+    Thread.currentThread().interrupt();
+}
+
+sleep() maintains held locks, unlike wait().
+
+83. Object.wait() vs Thread.sleep()
+wait(): releases lock, must be called in synchronized block, used for inter-thread communication
+sleep(): does not release lock, can be called anywhere, used for timing
+
+84. TransferQueue
+Extension of BlockingQueue with transfer operations.
+
+LinkedTransferQueue<String> queue = new LinkedTransferQueue<>();
+
+// Producer
+queue.transfer(item); // blocks until consumer takes
+
+// Consumer
+String item = queue.take();
+
+Useful for handoff scenarios where producers should wait for consumers.
+
+85. ConcurrentSkipListMap and ConcurrentSkipListSet
+Concurrent sorted collections based on skip lists.
+
+ConcurrentSkipListMap<String, Integer> map = new ConcurrentSkipListMap<>();
+map.put("a", 1);
+map.put("c", 3);
+map.put("b", 2);
+
+// Iteration is in sorted order
+map.forEach((k, v) -> System.out.println(k + "=" + v));
+
+Advantages over TreeMap:
+- Thread-safe
+- Concurrent access
+- No global locking
+
+86. AtomicReferenceFieldUpdater
+Allows atomic updates to volatile fields without creating Atomic objects.
+
+class Data {
+    volatile int value;
+}
+
+AtomicIntegerFieldUpdater<Data> updater =
+    AtomicIntegerFieldUpdater.newUpdater(Data.class, "value");
+
+Data data = new Data();
+updater.compareAndSet(data, 0, 1);
+
+Useful when you need atomic operations but want to avoid object overhead.
+
+87. VarHandle
+Low-level mechanism for fine-grained memory access control (Java 9+).
+
+VarHandle handle = MethodHandles.lookup()
+    .findVarHandle(Data.class, "value", int.class);
+
+handle.compareAndSet(data, 0, 1);
+
+Provides capabilities similar to sun.misc.Unsafe but with proper API.
+
+88. Thread Stack Size
+Each thread has a stack for method calls.
+
+Thread t = new Thread(null, () -> work(), "Worker", stackSize);
+
+Default stack size is platform-dependent. Too small → StackOverflowError. Too large → memory waste.
+
+Virtual threads have much smaller stack footprints.
+
+89. Thread Caching and ThreadLocal Memory Leaks
+ThreadLocal can cause memory leaks in thread pools.
+
+executor.submit(() -> {
+    threadLocal.set(expensiveObject);
+    try {
+        doWork();
+    } finally {
+        threadLocal.remove(); // CRITICAL: clean up
+    }
+});
+
+Without remove(), thread-local values persist across task executions.
+
+90. CompletableFuture Timeout Handling
+Modern timeout patterns:
+
+// orTimeout - complete with TimeoutException
+CompletableFuture.supplyAsync(() -> operation())
+    .orTimeout(5, TimeUnit.SECONDS);
+
+// completeOnTimeout - fallback value
+CompletableFuture.supplyAsync(() -> operation())
+    .completeOnTimeout(defaultValue, 5, TimeUnit.SECONDS);
+
+91. CompletableFuture Chaining Best Practices
+Avoid blocking in CompletableFuture chains:
+
+// BAD - blocks
+future.get()
+    .thenApply(...)
+
+// GOOD - non-blocking
+future.thenApply(...)
+
+// BAD - nested futures
+future.thenCompose(result -> 
+    CompletableFuture.supplyAsync(() -> anotherOp())
+)
+
+// GOOD - flat composition
+future.thenCompose(result -> 
+    CompletableFuture.supplyAsync(() -> anotherOp(), executor)
+)
+
+92. ForkJoinTask
+Base class for ForkJoinPool tasks.
+
+class RecursiveTaskExample extends RecursiveTask<Integer> {
+    @Override
+    protected Integer compute() {
+        if (smallEnough) {
+            return computeDirectly();
+        }
+        RecursiveTaskExample left = new RecursiveTaskExample(...);
+        RecursiveTaskExample right = new RecursiveTaskExample(...);
+        left.fork();
+        int rightResult = right.compute();
+        int leftResult = left.join();
+        return leftResult + rightResult;
+    }
+}
+
+93. Work Stealing in ForkJoinPool
+Each worker thread has its own task queue.
+
+Worker 1: [Task1, Task2, Task3]
+Worker 2: [Task4, Task5]
+Worker 3: [] → steals from Worker 1
+
+When a worker's queue is empty, it steals from the bottom of another worker's queue, reducing contention.
+
+94. Parallel Stream Custom Pool
+By default, parallel streams use ForkJoinPool.commonPool().
+
+// Use custom pool
+ForkJoinPool customPool = new ForkJoinPool(4);
+customPool.submit(() -> 
+    list.parallelStream().map(...).collect(...)
+).get();
+
+Important: The common pool is shared across the application; custom pools can isolate workloads.
+
+95. Thread Pool Queue Strategies
+Different queue types affect behavior:
+
+// SynchronousQueue - direct handoff, no queuing
+new ThreadPoolExecutor(core, max, 0, TimeUnit.MILLISECONDS,
+    new SynchronousQueue<>())
+
+// LinkedBlockingQueue - unbounded (can cause OOM)
+new ThreadPoolExecutor(core, max, 0, TimeUnit.MILLISECONDS,
+    new LinkedBlockingQueue<>())
+
+// ArrayBlockingQueue - bounded
+new ThreadPoolExecutor(core, max, 0, TimeUnit.MILLISECONDS,
+    new ArrayBlockingQueue<>(100))
+
+96. RejectedExecutionHandler Strategies
+When thread pool is full:
+
+// Abort (default)
+new ThreadPoolExecutor.AbortPolicy()
+
+// Caller runs
+new ThreadPoolExecutor.CallerRunsPolicy()
+
+// Discard
+new ThreadPoolExecutor.DiscardPolicy()
+
+// Discard oldest
+new ThreadPoolExecutor.DiscardOldestPolicy()
+
+97. ScheduledExecutorService
+For delayed and periodic tasks.
+
+ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
+
+// Delayed execution
+scheduler.schedule(() -> task(), 5, TimeUnit.SECONDS);
+
+// Fixed rate
+scheduler.scheduleAtFixedRate(() -> periodicTask(), 
+    0, 1, TimeUnit.SECONDS);
+
+// Fixed delay
+scheduler.scheduleWithFixedDelay(() -> periodicTask(), 
+    0, 1, TimeUnit.SECONDS);
+
+98. ThreadFactory Customization
+Customize thread creation for better debugging.
+
+ThreadFactory namedFactory = r -> {
+    Thread t = new Thread(r);
+    t.setName("worker-" + counter.incrementAndGet());
+    t.setUncaughtExceptionHandler(...);
+    return t;
+};
+
+ExecutorService executor = Executors.newFixedThreadPool(10, namedFactory);
+
+99. CompletableFuture with Custom Executor
+Control which executor handles each stage.
+
+ExecutorService ioExecutor = Executors.newCachedThreadPool();
+ExecutorService cpuExecutor = Executors.newFixedThreadPool(4);
+
+CompletableFuture.supplyAsync(() -> fetchFromDb(), ioExecutor)
+    .thenApplyAsync(data -> process(data), cpuExecutor)
+    .thenAcceptAsync(result -> save(result), ioExecutor);
+
+100. Structured Concurrency (Preview in Java 21)
+Structured concurrency introduces a scope for concurrent tasks.
+
+try (var scope = new StructuredTaskScope.ShutdownOnFailure()) {
+    Supplier<String> user = scope.fork(() -> fetchUser());
+    Supplier<String> order = scope.fork(() -> fetchOrder());
+    
+    scope.join().throwIfFailed();
+    
+    return process(user.get(), order.get());
+}
+
+Child tasks are automatically cancelled if the scope fails or is closed.
+
+101. Virtual Thread Pinning
+Virtual threads can be "pinned" to carrier threads when:
+
+- Inside synchronized blocks/methods
+- Inside native code
+- Inside certain blocking operations
+
+Pinning reduces scalability. Use ReentrantLock instead of synchronized in virtual thread environments.
+
+102. Thread Dump Generation Methods
+Multiple ways to generate thread dumps:
+
+// jstack
+jstack <pid> > dump.txt
+
+// jcmd
+jcmd <pid> Thread.print
+
+// jvisualvm
+Use jvisualvm GUI
+
+// Programmatically
+Thread.getAllStackTraces()
+
+// HotSpot VM option
+-XX:+PrintConcurrentLocks
+
+103. Analyzing Thread Dumps
+Look for:
+
+- BLOCKED threads (deadlock candidates)
+- RUNNABLE threads in long-running operations
+- WAITING/TIMED_WAITING patterns
+- Thread pool exhaustion
+- Lock contention patterns
+
+Common tools: jstack, jvisualvm, yourkit, async-profiler.
+
+104. Java Flight Recorder (JFR)
+Low-overhead profiling for production.
+
+java -XX:StartFlightRecording=filename=recording.jfr ...
+
+JFR can capture:
+- Thread allocation
+- Lock contention
+- Thread park/unpark events
+- CPU profiling
+
+105. Async Profiler
+Advanced profiling tool for Java.
+
+async-profiler -e cpu -d 30 -f profile.html <pid>
+
+Can profile:
+- CPU usage
+- Allocation
+- Lock contention
+- Wall-clock time
+
+106. Memory Consistency Errors
+When different threads see inconsistent memory state.
+
+// Without proper synchronization
+class Shared {
+    int x = 0;
+    int y = 0;
+}
+
+// Thread 1
+shared.x = 1;
+shared.y = 1;
+
+// Thread 2 might see:
+// x=1, y=0 (reordering)
+// x=0, y=1 (reordering)
+// x=0, y=0 (no visibility)
+
+Use volatile, synchronized, or atomic classes to prevent.
+
+107. False Sharing
+Performance degradation due to cache line contention.
+
+class Counter {
+    volatile long value;
+}
+
+Counter[] counters = new Counter[8];
+
+Different threads updating adjacent counters might contend for the same cache line.
+
+Solution: add padding or use @Contended (JVM internal).
+
+108. Happens-Before Relationships Complete List
+Complete happens-before rules:
+
+- Program order: Each action in a thread happens-before every action later in that thread
+- Monitor unlock → lock: Unlocking a monitor happens-before every subsequent lock
+- volatile write → read: Write to volatile happens-before every subsequent read
+- Thread start → actions: Thread.start() happens-before first action in started thread
+- Actions → thread join: Actions in thread happen-before successful join()
+- Transitive: If A happens-before B and B happens-before C, then A happens-before C
+- Final field initialization: Initialization of final field happens-before publication of object
+
+109. Thread Safety Annotations
+Using annotations to document thread safety.
+
+@ThreadSafe
+class ConcurrentCounter {
+    @GuardedBy("lock")
+    private int count;
+    
+    private final Object lock = new Object();
+    
+    @Immutable
+    private final String name;
+}
+
+@NotThreadSafe
+class UnsafeCounter {
+    private int count; // not thread-safe
+}
+
+Tools like FindBugs can check these annotations.
+
+110. Testing Concurrent Code
+Strategies for testing concurrent code:
+
+// Use Awaitility for async assertions
+await().atMost(5, TimeUnit.SECONDS)
+    .until(() -> counter.get() == expected);
+
+// Use CountDownLatch for coordination
+CountDownLatch latch = new CountDownLatch(n);
+// submit n tasks
+latch.await();
+
+// Use ExecutorService for controlled concurrency
+ExecutorService executor = Executors.newFixedThreadPool(10);
+List<Future<?>> futures = new ArrayList<>();
+for (int i = 0; i < 100; i++) {
+    futures.add(executor.submit(task));
+}
+for (Future<?> f : futures) {
+    f.get();
+}
+
+// Use concurrent test utilities
+@org.junit.Test
+public void testConcurrentAccess() throws Exception {
+    // test code
+}
+
+111. Common Concurrency Anti-Patterns
+Avoid these:
+
+- Excessive synchronization: Too much locking causes contention
+- Fine-grained locking without measurement: Complexity without benefit
+- Using synchronized for everything: Prefer more specific mechanisms
+- Ignoring InterruptedException: Always handle properly
+- Thread.sleep for coordination: Use proper synchronization primitives
+- Double-checked locking without volatile: Unsafe
+- Using notify() instead of notifyAll(): Can cause missed signals
+- Relying on thread priority for correctness: Platform-dependent
+- Sharing state unnecessarily: Prefer thread confinement
+- Blocking in async pipelines: Defeats the purpose
+
+112. Concurrency in Microservices
+Considerations for distributed systems:
+
+- Circuit breakers for resilience
+- Bulkheads for isolation
+- Timeouts for all external calls
+- Retry with exponential backoff
+- Idempotent operations
+- Distributed transactions (Saga pattern)
+- Eventual consistency
+- Rate limiting
+
+113. Reactive Streams Specification
+Standard for async stream processing with backpressure.
+
+Publisher<T> publisher = subscriber -> {
+    subscriber.onSubscribe(new Subscription() {
+        @Override
+        public void request(long n) {
+            // send n items
+        }
+        
+        @Override
+        public void cancel() {
+            // cleanup
+        }
+    });
+};
+
+Key principles:
+- Asynchronous
+- Non-blocking backpressure
+- Optional synchronous processing
+
+114. Project Loom and Continuations
+Virtual threads are built on continuations.
+
+Continuations allow:
+- Pausing and resuming execution
+- Very low overhead context switching
+- Millions of concurrent operations
+
+Understanding continuations helps debug virtual thread behavior.
+
+115. Thread Pool Warmup
+Pre-create threads to avoid first-request latency.
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+    corePoolSize, maxPoolSize, ...);
+
+// Warm up
+for (int i = 0; i < corePoolSize; i++) {
+    executor.submit(() -> {});
+}
+
+Useful for latency-sensitive applications.
+
+116. Graceful Shutdown Patterns
+Comprehensive shutdown handling:
+
+public void shutdown() {
+    // Stop accepting new work
+    executor.shutdown();
+    
+    // Wait for existing work to complete
+    try {
+        if (!executor.awaitTermination(30, TimeUnit.SECONDS)) {
+            // Force shutdown if timeout
+            executor.shutdownNow();
+            
+            // Wait again for force shutdown
+            if (!executor.awaitTermination(15, TimeUnit.SECONDS)) {
+                log.error("Executor did not terminate");
+            }
+        }
+    } catch (InterruptedException e) {
+        executor.shutdownNow();
+        Thread.currentThread().interrupt();
+    }
+    
+    // Cleanup resources
+    cleanup();
+}
+
+117. Monitoring Thread Pools
+Key metrics to track:
+
+- Active thread count
+- Queue size
+- Completed task count
+- Rejected task count
+- Task execution time (p50, p95, p99)
+- Thread pool utilization
+
+Can be exposed via JMX or custom metrics.
+
+118. Thread Pool Dynamic Sizing
+Adjust pool size based on load.
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+    corePoolSize, maxPoolSize, keepAlive, TimeUnit.SECONDS,
+    new LinkedBlockingQueue<>());
+
+// Allow core threads to timeout
+executor.allowCoreThreadTimeOut(true);
+
+// Dynamically adjust
+executor.setCorePoolSize(newCoreSize);
+executor.setMaximumPoolSize(newMaxSize);
+
+119. Concurrent Hash Map Performance Tuning
+ConcurrentHashMap parameters:
+
+initialCapacity: starting size
+loadFactor: when to resize (default 0.75)
+concurrencyLevel: estimated concurrent threads (Java 7 only)
+
+new ConcurrentHashMap<>(initialCapacity, loadFactor);
+
+For high write contention, consider larger initial capacity to reduce resizing.
+
+120. Read-Write Lock Usage Patterns
+Effective use of ReadWriteLock:
+
+class Cache {
+    private final Map<String, String> cache = new HashMap<>();
+    private final ReadWriteLock lock = new ReentrantReadWriteLock();
+    
+    public String get(String key) {
+        lock.readLock().lock();
+        try {
+            return cache.get(key);
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+    
+    public void put(String key, String value) {
+        lock.writeLock().lock();
+        try {
+            cache.put(key, value);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+}
+
+Best when reads significantly outnumber writes.
+
+121. StampedLock Optimistic Reading
+Optimistic pattern for StampedLock:
+
+class Point {
+    private double x, y;
+    private final StampedLock sl = new StampedLock();
+    
+    void move(double deltaX, double deltaY) {
+        long stamp = sl.writeLock();
+        try {
+            x += deltaX;
+            y += deltaY;
+        } finally {
+            sl.unlockWrite(stamp);
+        }
+    }
+    
+    double distanceFromOrigin() {
+        long stamp = sl.tryOptimisticRead();
+        double currentX = x, currentY = y;
+        if (!sl.validate(stamp)) {
+            stamp = sl.readLock();
+            try {
+                currentX = x;
+                currentY = y;
+            } finally {
+                sl.unlockRead(stamp);
+            }
+        }
+        return Math.sqrt(currentX * currentX + currentY * currentY);
+    }
+}
+
+Optimistic reads avoid locking when no writes occur.
+
+122. Semaphore for Rate Limiting
+Use Semaphore to control rate.
+
+class RateLimiter {
+    private final Semaphore semaphore;
+    private final ScheduledExecutorService scheduler;
+    
+    public RateLimiter(int permits, int period, TimeUnit unit) {
+        semaphore = new Semaphore(permits);
+        scheduler = Executors.newScheduledThreadPool(1);
+        scheduler.scheduleAtFixedRate(() -> {
+            semaphore.release(permits - semaphore.availablePermits());
+        }, period, period, unit);
+    }
+    
+    public boolean tryAcquire() {
+        return semaphore.tryAcquire();
+    }
+}
+
+123. CyclicBarrier with Barrier Action
+Execute action when all threads reach barrier.
+
+CyclicBarrier barrier = new CyclicBarrier(3, () -> {
+    // This runs when all 3 threads reach the barrier
+    System.out.println("All threads reached barrier");
+});
+
+for (int i = 0; i < 3; i++) {
+    new Thread(() -> {
+        doWork();
+        barrier.await();
+    }).start();
+}
+
+124. Phaser for Multi-Phase Coordination
+Phaser supports multiple synchronization phases.
+
+Phaser phaser = new Phaser(3); // 3 parties
+
+for (int i = 0; i < 3; i++) {
+    new Thread(() -> {
+        // Phase 1
+        doPhase1();
+        phaser.arriveAndAwaitAdvance();
+        
+        // Phase 2
+        doPhase2();
+        phaser.arriveAndAwaitAdvance();
+        
+        // Phase 3
+        doPhase3();
+        phaser.arriveAndAwaitAdvance();
+    }).start();
+}
+
+125. CompletableFuture for Parallel Independent Operations
+Execute independent operations in parallel.
+
+CompletableFuture<User> userFuture = 
+    CompletableFuture.supplyAsync(() -> fetchUser());
+CompletableFuture<Order> orderFuture = 
+    CompletableFuture.supplyAsync(() -> fetchOrder());
+CompletableFuture<Inventory> inventoryFuture = 
+    CompletableFuture.supplyAsync(() -> fetchInventory());
+
+CompletableFuture.allOf(userFuture, orderFuture, inventoryFuture)
+    .thenApply(v -> process(
+        userFuture.get(), 
+        orderFuture.get(), 
+        inventoryFuture.get()
+    ));
+
+126. Handling Timeouts in Concurrent Operations
+Comprehensive timeout handling:
+
+ExecutorService executor = Executors.newFixedThreadPool(10);
+
+Future<Result> future = executor.submit(() -> longOperation());
+
+try {
+    Result result = future.get(5, TimeUnit.SECONDS);
+} catch (TimeoutException e) {
+    future.cancel(true);
+    // handle timeout
+} catch (InterruptedException e) {
+    Thread.currentThread().interrupt();
+    // handle interrupt
+} catch (ExecutionException e) {
+    // handle execution failure
+}
+
+127. Thread Pool for Different Workload Types
+Separate pools for different workloads:
+
+ExecutorService cpuPool = Executors.newFixedThreadPool(
+    Runtime.getRuntime().availableProcessors());
+
+ExecutorService ioPool = Executors.newCachedThreadPool();
+
+ExecutorService scheduledPool = Executors.newScheduledThreadPool(4);
+
+// CPU-intensive work
+cpuPool.submit(() -> heavyComputation());
+
+// I/O-intensive work
+ioPool.submit(() -> databaseCall());
+
+// Scheduled work
+scheduledPool.scheduleAtFixedRate(() -> cleanup(), 
+    0, 1, TimeUnit.HOURS);
+
+128. Avoiding Thread Starvation
+Strategies to prevent starvation:
+
+- Use fair locks when fairness is critical
+- Avoid holding locks for long periods
+- Use lock striping for high contention
+- Implement priority-based scheduling if needed
+- Monitor thread pool queue sizes
+- Use appropriate thread pool sizing
+
+129. Concurrent Data Structure Selection Guide
+Choose based on access patterns:
+
+HashMap → ConcurrentHashMap for concurrent access
+ArrayList → CopyOnWriteArrayList for read-heavy workloads
+LinkedList → ConcurrentLinkedQueue for queue operations
+PriorityQueue → PriorityBlockingQueue for priority ordering
+HashSet → ConcurrentSkipListSet for sorted concurrent sets
+TreeMap → ConcurrentSkipListMap for sorted concurrent maps
+
+130. Memory Barriers
+Memory barriers (fences) prevent reordering.
+
+volatile writes establish a StoreStore barrier
+volatile reads establish a LoadLoad barrier
+synchronized establishes both
+
+Understanding memory barriers helps reason about the Java Memory Model.
+
+131. Safe Publication Patterns
+Ensure objects are safely published to other threads:
+
+- Initialize via static initializer
+- Store reference in volatile field
+- Store reference in final field
+- Store reference in field guarded by lock
+- Use concurrent collection
+
+class Holder {
+    private volatile HeavyObject heavy;
+    
+    public HeavyObject getHeavy() {
+        if (heavy == null) {
+            synchronized (this) {
+                if (heavy == null) {
+                    heavy = new HeavyObject();
+                }
+            }
+        }
+        return heavy;
+    }
+}
+
+132. Thread Pool Queue Monitoring
+Monitor queue health:
+
+ThreadPoolExecutor executor = new ThreadPoolExecutor(...);
+
+// Monitor queue size
+int queueSize = executor.getQueue().size();
+
+// Monitor active threads
+int activeThreads = executor.getActiveCount();
+
+// Monitor completed tasks
+long completedTasks = executor.getCompletedTaskCount();
+
+// Monitor rejected tasks
+// Use custom RejectedExecutionHandler to track
+
+133. CompletableFuture Exception Propagation
+Understand exception handling in chains:
+
+CompletableFuture.supplyAsync(() -> {
+    throw new RuntimeException("Error");
+})
+.thenApply(result -> {
+    // This won't execute
+    return result + 1;
+})
+.exceptionally(ex -> {
+    // This will execute
+    return "fallback";
+});
+
+Exceptions propagate down the chain unless handled.
+
+134. Virtual Thread Debugging
+Debugging virtual threads:
+
+- Thread names still work for identification
+- Stack traces show virtual thread frames
+- jstack works with virtual threads
+- Pinning can be detected with JDK tools
+
+jcmd <pid> Thread.dump_to_file -format=json -filename=vt.json
+
+135. Structured Concurrency Benefits
+Structured concurrency provides:
+
+- Clear parent-child relationships
+- Automatic error propagation
+- Unified cancellation
+- Proper resource cleanup
+- Easier debugging
+- Predictable lifecycles
+
+136. Concurrency in Spring Framework
+Spring provides concurrency utilities:
+
+@Async
+public CompletableFuture<Result> asyncOperation() {
+    // runs in separate thread
+}
+
+@Scheduled(fixedRate = 5000)
+public void scheduledTask() {
+    // runs every 5 seconds
+}
+
+@Configuration
+@EnableAsync
+public class AsyncConfig {
+    @Bean
+    public Executor taskExecutor() {
+        return Executors.newFixedThreadPool(10);
+    }
+}
+
+137. Concurrency in Java EE/Jakarta EE
+Enterprise concurrency:
+
+@ManagedExecutorService
+@Singleton
+public class ExecutorBean {
+    @Resource
+    ManagedExecutorService executor;
+    
+    public void submitTask() {
+        executor.submit(() -> work());
+    }
+}
+
+@Asynchronous
+public Future<Result> asyncMethod() {
+    // async execution
+}
+
+138. Reactive Libraries Comparison
+Popular reactive libraries:
+
+Project Reactor: Spring ecosystem, widely used
+RxJava: Android and general use
+Vert.x: Event-driven, high performance
+Akka Streams: Actor-based, distributed systems
+
+Each has different operators and backpressure strategies.
+
+139. Backpressure Strategies
+Common backpressure strategies:
+
+- Buffer: Store items until capacity
+- Drop: Drop new items when full
+- Drop Oldest: Drop oldest when full
+- Latest: Keep only latest item
+- Error: Signal error when full
+- Throttle: Slow down producer
+
+140. Concurrency Testing Tools
+Tools for testing concurrent code:
+
+- JUnit with concurrent test cases
+- TestNG with parallel execution
+- Awaitility for async assertions
+- ConcurrentTestUtil from Apache Commons
+- JCStress for concurrency stress testing
+- JMH for microbenchmarking
+
+141. JMH for Microbenchmarking
+Java Microbenchmark Harness:
+
+@Benchmark
+@BenchmarkMode(Mode.AverageTime)
+@OutputTimeUnit(TimeUnit.NANOSECONDS)
+public void testConcurrentHashMap() {
+    map.put(key, value);
+}
+
+Run with: java -jar benchmarks.jar
+
+Critical for accurate performance measurement of concurrent code.
+
+142. Common Concurrency Interview Questions
+Technical questions to prepare:
+
+1. Explain the difference between synchronized and volatile
+2. How does ConcurrentHashMap work internally?
+3. What is the ABA problem and how do you solve it?
+4. Explain happens-before relationships in JMM
+5. When would you use CountDownLatch vs CyclicBarrier?
+6. What are the limitations of virtual threads?
+7. How do you handle InterruptedException properly?
+8. Explain double-checked locking and why volatile is needed
+9. What is thread starvation and how do you prevent it?
+10. Describe the producer-consumer pattern and its implementation
+
+143. Practical Scenario: Design a Thread-Safe Cache
+Requirements:
+- Thread-safe access
+- Efficient reads
+- Lazy loading
+- Cache eviction
+
+class ConcurrentCache<K, V> {
+    private final ConcurrentHashMap<K, CompletableFuture<V>> map = 
+        new ConcurrentHashMap<>();
+    
+    private final Function<K, V> loader;
+    private final int maxSize;
+    
+    public V get(K key) {
+        CompletableFuture<V> future = map.computeIfAbsent(key, 
+            k -> CompletableFuture.supplyAsync(() -> loader.apply(k)));
+        
+        try {
+            return future.get();
+        } catch (Exception e) {
+            map.remove(key);
+            throw new RuntimeException(e);
+        }
+    }
+    
+    public void invalidate(K key) {
+        map.remove(key);
+    }
+}
+
+144. Practical Scenario: Rate Limiter Implementation
+Token bucket algorithm:
+
+class TokenBucketRateLimiter {
+    private final long capacity;
+    private final long refillRate;
+    private volatile long tokens;
+    private volatile long lastRefillTime;
+    
+    public synchronized boolean tryAcquire(int permits) {
+        refill();
+        if (tokens >= permits) {
+            tokens -= permits;
+            return true;
+        }
+        return false;
+    }
+    
+    private void refill() {
+        long now = System.currentTimeMillis();
+        long elapsed = now - lastRefillTime;
+        long newTokens = elapsed * refillRate / 1000;
+        tokens = Math.min(capacity, tokens + newTokens);
+        lastRefillTime = now;
+    }
+}
+
+145. Practical Scenario: Parallel Data Processing
+Process large dataset in parallel:
+
+List<Data> dataset = loadData();
+
+int batchSize = dataset.size() / Runtime.getRuntime().availableProcessors();
+List<List<Data>> batches = Lists.partition(dataset, batchSize);
+
+List<CompletableFuture<ProcessedResult>> futures = batches.stream()
+    .map(batch -> CompletableFuture.supplyAsync(() -> processBatch(batch)))
+    .toList();
+
+CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+    .thenApply(v -> futures.stream()
+        .map(CompletableFuture::join)
+        .toList())
+    .thenAccept(results -> aggregate(results));
+
+146. Best Practices Summary
+Key principles for production code:
+
+- Prefer immutable objects
+- Minimize shared mutable state
+- Use appropriate synchronization granularity
+- Always release locks in finally blocks
+- Handle InterruptedException properly
+- Size thread pools based on workload
+- Monitor concurrent systems
+- Test concurrent code thoroughly
+- Document thread-safety guarantees
+- Use higher-level abstractions when possible
+
+147. Additional Resources
+Further learning:
+
+- Java Concurrency in Practice by Brian Goetz
+- "The Java Memory Model" by Jeremy Manson
+- Java documentation on java.util.concurrent
+- Project Loom documentation
+- JCP JSR-166 (Concurrency Utilities)
+
+148. Quick Reference Card
+Essential APIs at a glance:
+
+Execution:
+- Thread.start()
+- ExecutorService.submit()
+- CompletableFuture.supplyAsync()
+- ForkJoinPool.invoke()
+
+Coordination:
+- synchronized
+- ReentrantLock
+- Semaphore
+- CountDownLatch
+- CyclicBarrier
+- Phaser
+
+Collections:
+- ConcurrentHashMap
+- CopyOnWriteArrayList
+- BlockingQueue
+- ConcurrentSkipListMap
+
+Atomics:
+- AtomicInteger
+- AtomicReference
+- LongAdder
+
+Modern (Java 21+):
+- Thread.startVirtualThread()
+- ScopedValue
+- StructuredTaskScope
