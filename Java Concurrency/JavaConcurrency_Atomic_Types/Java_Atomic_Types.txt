@@ -1,0 +1,87 @@
+JAVA ATOMIC TYPES - SHORT NOTES
+
+Atomic types are classes used in Java concurrency to safely work with shared values across multiple threads.
+
+They can be used without synchronized keyword for the atomic operations provided by the class.
+
+Package:
+java.util.concurrent.atomic
+
+WHY ATOMIC TYPES?
+
+Normal operations like:
+
+count++;
+
+are not atomic. Internally, they involve:
+
+read -> modify -> write
+
+If multiple threads perform this operation at the same time, the final result may be incorrect.
+
+Atomic types provide thread-safe operations on individual values.
+
+IMPORTANT POINT:
+
+We can use Atomic types to safely update shared values between multiple threads without using synchronized for those atomic operations.
+
+They provide thread safety using atomic operations such as compareAndSet() and incrementAndGet().
+
+COMMON ATOMIC TYPES:
+
+AtomicInteger
+Used for thread-safe int values.
+
+AtomicLong
+Used for thread-safe long values.
+
+AtomicBoolean
+Used for thread-safe boolean values.
+
+AtomicReference<T>
+Used for thread-safe object references.
+
+LongAdder
+Used for high-concurrency counters.
+
+EXAMPLE:
+
+AtomicLong count = new AtomicLong(0);
+
+count.incrementAndGet();
+
+System.out.println(count.get());
+
+IMPORTANT METHODS:
+
+get()
+Returns the current value.
+
+set()
+Sets a new value.
+
+incrementAndGet()
+Increments the value and returns the new value.
+
+decrementAndGet()
+Decrements the value and returns the new value.
+
+addAndGet()
+Adds a value and returns the new value.
+
+compareAndSet()
+Updates the value only if the current value matches the expected value.
+
+KEY POINT:
+
+Atomic means an operation happens as one indivisible operation.
+
+Atomic types are useful when multiple threads need to safely access and update the same value.
+
+They can be used without synchronized for the atomic operations provided by the class.
+
+IMPORTANT:
+
+Atomic types do NOT mean that all operations on an object are automatically thread-safe.
+
+They are mainly useful for simple shared-state operations such as counters, flags, and references.
