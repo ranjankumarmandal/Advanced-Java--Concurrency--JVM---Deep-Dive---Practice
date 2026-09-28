@@ -1,0 +1,56 @@
+AtomicLong - Short Notes
+
+What is AtomicLong?
+- Thread-safe primitive long value
+- Provides atomic operations without synchronized keyword
+- Uses CAS (Compare-And-Swap) for lock-free operations
+- Part of java.util.concurrent.atomic package
+
+Key Methods:
+- get() - read current value
+- set(value) - set new value
+- getAndSet(value) - return old, set new
+- getAndAdd(delta) / addAndGet(delta) - atomic addition
+- getAndIncrement() / incrementAndGet() - atomic increment
+- getAndDecrement() / decrementAndGet() - atomic decrement
+- compareAndSet(expected, newValue) - update only if matches expected
+- getAndUpdate(function) - apply function, return old value
+- updateAndGet(function) - apply function, return new value
+- accumulateAndGet(value, function) - accumulate with function
+- getAndAccumulate(value, function) - accumulate, return old
+
+Why Use AtomicLong?
+- No need for synchronized keyword
+- Lock-free algorithm using CAS
+- Better performance than synchronized blocks
+- No thread blocking
+- Better scalability under high contention
+- Simple API for common operations
+
+When to Use AtomicLong:
+- Shared counters in multithreaded applications
+- Sequence number generation
+- Statistics tracking
+- Simple shared state without complex synchronization
+- When you need atomic read-modify-write operations
+- When performance is critical and contention is moderate
+
+Benefits vs Synchronized:
+- No thread blocking/waiting
+- Lower overhead
+- Better cache performance
+- Avoids deadlocks
+- Simpler code for basic operations
+- Non-blocking algorithm
+
+Limitations:
+- Only works on single variables
+- Not suitable for complex multi-variable operations
+- CAS can fail under high contention (spin loops)
+- Not a replacement for all synchronization needs
+
+When NOT to Use:
+- Complex operations involving multiple variables
+- When you need to lock multiple resources together
+- When operations are not atomic by nature
+- When you need fairness guarantees
