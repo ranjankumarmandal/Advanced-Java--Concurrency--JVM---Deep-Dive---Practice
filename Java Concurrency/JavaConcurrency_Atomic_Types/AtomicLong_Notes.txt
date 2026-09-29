@@ -54,3 +54,271 @@ When NOT to Use:
 - When you need to lock multiple resources together
 - When operations are not atomic by nature
 - When you need fairness guarantees
+
+================================================================================
+PART 1: CORE CONCEPTS (Today's Learning)
+================================================================================
+
+CAS (Compare-And-Swap) Mechanism:
+---------------------------------
+CAS is the fundamental operation that makes AtomicLong work without locks.
+
+How CAS Works:
+1. Read current value from memory
+2. Compare with expected value
+3. If matches, update to new value atomically
+4. If doesn't match, operation fails (retry or handle)
+
+CAS Operation Flow:
+- CPU instruction: cmpxchg on x86
+- Atomic: all three steps happen as one indivisible operation
+- Optimistic: assumes no contention, retries if conflict occurs
+
+CAS Pseudocode:
+```
+boolean compareAndSet(long expected, long newValue) {
+    if (currentValue == expected) {
+        currentValue = newValue;
+        return true;
+    }
+    return false;
+}
+```
+
+ABA Problem:
+-----------
+What is ABA Problem?
+- Thread A reads value X
+- Thread B changes X to Y, then back to X
+- Thread A's CAS succeeds even though value changed
+- Can cause issues in certain algorithms
+
+ABA Problem Example:
+- Initial: sharedRef = ObjectA
+- Thread1: reads ObjectA, pauses
+- Thread2: changes to ObjectB, then back to ObjectA
+- Thread1: CAS(ObjectA, ObjectC) succeeds
+- But ObjectA is a different instance than original!
+
+Solutions to ABA:
+- AtomicStampedReference (adds version stamp)
+- AtomicMarkableReference (adds boolean mark)
+- Use version numbers in your own logic
+
+Memory Model & Visibility:
+--------------------------
+Happens-Before Relationship:
+- Atomic operations establish happens-before
+- Guarantees visibility across threads
+- No need for volatile separately
+
+Volatile Semantics:
+- AtomicLong has volatile-like semantics
+- Writes are immediately visible to other threads
+- Prevents reordering of operations
+
+Memory Barrier Effects:
+- StoreStore barrier before write
+- StoreLoad barrier after write
+- LoadLoad barrier before read
+- LoadStore barrier after read
+
+Visibility Guarantees:
+- get() always sees latest set() value
+- All atomic methods have full visibility
+- No stale reads across threads
+
+Performance Characteristics:
+----------------------------
+Lock-Free vs Lock-Based:
+- Lock-free: no thread blocking
+- Lock-based: threads can block waiting
+- AtomicLong: lock-free using CAS
+
+Contention Levels:
+- Low contention: excellent performance
+- Medium contention: good performance with retries
+- High contention: performance degrades (spin loops)
+
+CAS Spin Loop:
+```
+while (!compareAndSet(expected, newValue)) {
+    expected = get();  // re-read current value
+    // retry
+}
+```
+
+Performance Comparison:
+- AtomicLong vs synchronized: 2-10x faster (low contention)
+- AtomicLong vs volatile: supports read-modify-write
+- LongAdder vs AtomicLong: LongAdder better for high contention
+
+When CAS Fails:
+- Under high contention, CAS can fail repeatedly
+- CPU wastes cycles in spin loops
+- Consider LongAdder for high-contention counters
+- Consider synchronized for very high contention
+
+Code Examples:
+--------------
+Example 1: Simple Counter
+```java
+AtomicLong counter = new AtomicLong(0);
+
+// Thread 1
+counter.incrementAndGet();
+
+// Thread 2
+counter.incrementAndGet();
+
+// Result: counter = 2 (guaranteed)
+```
+
+Example 2: Compare-And-Set Pattern
+```java
+AtomicLong balance = new AtomicLong(100);
+
+// Withdraw only if sufficient funds
+long current = balance.get();
+long newBalance = current - 50;
+if (balance.compareAndSet(current, newBalance)) {
+    System.out.println("Withdrawal successful");
+} else {
+    System.out.println("Withdrawal failed (concurrent modification)");
+}
+```
+
+Example 3: Functional Update
+```java
+AtomicLong value = new AtomicLong(10);
+
+// Apply function atomically
+long result = value.updateAndGet(x -> x * 2);
+// value = 20, result = 20
+
+long oldResult = value.getAndUpdate(x -> x + 5);
+// value = 25, oldResult = 20
+```
+
+Example 4: Accumulate Pattern
+```java
+AtomicLong sum = new AtomicLong(0);
+
+// Accumulate values
+sum.accumulateAndGet(5, Long::sum);  // sum = 5
+sum.accumulateAndGet(10, Long::sum); // sum = 15
+sum.accumulateAndGet(3, Long::sum);   // sum = 18
+```
+
+Example 5: Lazy Initialization
+```java
+AtomicLong cachedValue = new AtomicLong(-1);
+
+long getValue() {
+    long cached = cachedValue.get();
+    if (cached == -1) {
+        cached = computeExpensiveValue();
+        cachedValue.compareAndSet(-1, cached);
+    }
+    return cachedValue.get();
+}
+```
+
+Common Patterns:
+---------------
+1. Counter Pattern
+   - Use incrementAndGet() for simple counters
+   - Thread-safe without synchronization
+
+2. Sequence Generator
+   - Use getAndIncrement() for unique IDs
+   - Each thread gets unique sequence number
+
+3. Max/Min Tracking
+   - Use updateAndGet() with Math.max/min
+   - Track maximum value seen across threads
+
+4. Circular Buffer Index
+   - Use getAndIncrement() with modulo
+   - Thread-safe index for circular buffers
+
+5. Reference Counting
+   - incrementAndGet() for acquire
+   - decrementAndGet() for release
+   - Check for zero to cleanup
+
+Advanced Methods:
+-----------------
+getAndUpdate():
+- Applies function, returns old value
+- Useful when you need previous value
+- Function must be side-effect free
+
+updateAndGet():
+- Applies function, returns new value
+- Useful when you need updated value
+- Function must be side-effect free
+
+accumulateAndGet():
+- Combines current value with accumulator
+- Uses accumulator function (e.g., Long::sum)
+- Returns new value after accumulation
+
+getAndAccumulate():
+- Combines current value with accumulator
+- Returns old value before accumulation
+- Useful for logging old values
+
+Functional Method Example:
+```java
+AtomicLong number = new AtomicLong(5);
+
+// Square the value
+long squared = number.updateAndGet(x -> x * x);
+// number = 25, squared = 25
+
+// Get old, then update
+long old = number.getAndUpdate(x -> x / 5);
+// number = 5, old = 25
+```
+
+Common Pitfalls:
+----------------
+1. Check-Then-Act Race Condition
+   WRONG:
+   ```java
+   if (atomic.get() > 0) {
+       // Another thread might change here
+       atomic.decrementAndGet();
+   }
+   ```
+   RIGHT:
+   ```java
+   while (true) {
+       long current = atomic.get();
+       if (current <= 0) break;
+       if (atomic.compareAndSet(current, current - 1)) break;
+   }
+   ```
+
+2. Assuming Atomicity Across Multiple Operations
+   - Only single operations are atomic
+   - Multiple operations need additional sync
+
+3. Ignoring CAS Failure
+   - Always handle compareAndSet failure
+   - Don't assume it will always succeed
+
+4. Using in Loops Without Backoff
+   - Can cause CPU thrashing
+   - Consider adding backoff/retry logic
+
+5. Forgetting Visibility
+   - AtomicLong provides visibility
+   - Regular long does NOT
+
+================================================================================
+PART 2: ADVANCED TOPICS (Tomorrow's Learning)
+================================================================================
+[To be completed tomorrow: LongAdder comparison, performance tuning,
+ real-world use cases, debugging, testing, best practices, etc.]
