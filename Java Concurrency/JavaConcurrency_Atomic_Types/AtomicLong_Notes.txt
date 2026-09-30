@@ -318,7 +318,434 @@ Common Pitfalls:
    - Regular long does NOT
 
 ================================================================================
-PART 2: ADVANCED TOPICS (Tomorrow's Learning)
+PART 2: ADVANCED TOPICS
 ================================================================================
-[To be completed tomorrow: LongAdder comparison, performance tuning,
- real-world use cases, debugging, testing, best practices, etc.]
+
+LongAdder vs AtomicLong:
+------------------------
+What is LongAdder?
+- Introduced in Java 8
+- Designed for high-contention scenarios
+- Uses striping to reduce contention
+- Better performance under heavy write load
+
+How LongAdder Works:
+- Maintains array of cell values (stripes)
+- Each thread updates different cell (reduces contention)
+- sum() method combines all cells for total
+- Trade-off: higher memory usage
+
+Performance Comparison:
+- Low contention: AtomicLong is faster (simpler)
+- Medium contention: Comparable performance
+- High contention: LongAdder significantly faster (3-10x)
+- Read-heavy: AtomicLong better (sum() has overhead)
+
+When to Use LongAdder:
+- Statistics collection (counters, metrics)
+- High-frequency updates
+- Many threads updating same counter
+- When exact current value not needed frequently
+- When you can tolerate small delays in sum()
+
+When to Use AtomicLong:
+- Need exact current value frequently
+- Low to medium contention
+- Memory-constrained environments
+- When you need compareAndSet semantics
+- When you need atomic read-modify-write
+
+LongAdder Example:
+```java
+LongAdder counter = new LongAdder();
+
+// Multiple threads increment
+counter.increment();  // Thread 1
+counter.increment();  // Thread 2
+counter.add(5);       // Thread 3
+
+// Get total (not atomic with updates)
+long total = counter.sum();  // Returns 7
+```
+
+LongAccumulator:
+----------------
+What is LongAccumulator?
+- More flexible version of LongAdder
+- Custom accumulation function
+- Can perform max, min, or custom operations
+- Also uses striping for performance
+
+LongAccumulator Example:
+```java
+// Track maximum value
+LongAccumulator max = new LongAccumulator(Long::max, Long.MIN_VALUE);
+max.accumulate(10);
+max.accumulate(5);
+max.accumulate(20);
+// max.get() = 20
+
+// Track minimum value
+LongAccumulator min = new LongAccumulator(Long::min, Long.MAX_VALUE);
+min.accumulate(10);
+min.accumulate(5);
+min.accumulate(20);
+// min.get() = 5
+```
+
+Performance Tuning:
+-------------------
+Optimizing CAS Operations:
+1. Reduce Contention
+   - Use thread-local variables when possible
+   - Batch updates instead of frequent small updates
+   - Consider LongAdder for high-contention counters
+
+2. Backoff Strategies
+   ```java
+   // Exponential backoff
+   int attempts = 0;
+   while (!atomic.compareAndSet(expected, newValue)) {
+       Thread.sleep(1 << attempts);  // 1, 2, 4, 8ms...
+       attempts++;
+       expected = atomic.get();
+   }
+   ```
+
+3. Cache Line Padding
+   - AtomicLong already has @Contended annotation
+   - Prevents false sharing from cache lines
+   - Important for high-frequency updates
+
+4. Warm-up JVM
+   - JIT compilation improves performance
+   - Run benchmarks after warm-up
+   - Use -XX:CompileThreshold for tuning
+
+Benchmarking Tips:
+- Use JMH (Java Microbenchmark Harness)
+- Avoid dead code elimination
+- Run multiple iterations
+- Include warm-up phase
+- Measure different contention levels
+
+JMH Example Structure:
+```java
+@Benchmark
+@Threads(4)
+public long benchmarkAtomicLong() {
+    return atomicLong.incrementAndGet();
+}
+
+@Benchmark
+@Threads(4)
+public void benchmarkLongAdder() {
+    longAdder.increment();
+}
+```
+
+Real-World Use Cases:
+---------------------
+1. Request Counter in Web Server
+   ```java
+   public class RequestMetrics {
+       private final AtomicLong requestCount = new AtomicLong(0);
+       private final AtomicLong errorCount = new AtomicLong(0);
+       private final LongAdder responseTimeSum = new LongAdder();
+
+       public void recordRequest(boolean success, long responseTime) {
+           requestCount.incrementAndGet();
+           if (!success) {
+               errorCount.incrementAndGet();
+           }
+           responseTimeSum.add(responseTime);
+       }
+
+       public double getErrorRate() {
+           return (double) errorCount.get() / requestCount.get();
+       }
+   }
+   ```
+
+2. Unique ID Generator
+   ```java
+   public class IdGenerator {
+       private final AtomicLong sequence = new AtomicLong(0);
+
+       public long nextId() {
+           return sequence.getAndIncrement();
+       }
+   }
+   ```
+
+3. Rate Limiter
+   ```java
+   public class RateLimiter {
+       private final AtomicLong tokens;
+       private final long maxTokens;
+       private final long refillInterval;
+
+       public boolean tryConsume() {
+           while (true) {
+               long current = tokens.get();
+               if (current <= 0) return false;
+               if (tokens.compareAndSet(current, current - 1)) {
+                   return true;
+               }
+           }
+       }
+   }
+   ```
+
+4. Circular Buffer Index
+   ```java
+   public class CircularBuffer<T> {
+       private final T[] buffer;
+       private final AtomicLong writeIndex = new AtomicLong(0);
+       private final int capacity;
+
+       public void put(T item) {
+           long index = writeIndex.getAndIncrement() % capacity;
+       buffer[(int) index] = item;
+       }
+   }
+   ```
+
+5. Reference Counting
+   ```java
+   public class ReferenceCounted {
+       private final AtomicLong refCount = new AtomicLong(1);
+
+       public void retain() {
+           refCount.incrementAndGet();
+       }
+
+       public void release() {
+           if (refCount.decrementAndGet() == 0) {
+               cleanup();
+           }
+       }
+   }
+   ```
+
+6. Sequence Number for Messages
+   ```java
+   public class MessageSequencer {
+       private final AtomicLong sequence = new AtomicLong(0);
+
+       public long nextSequence() {
+           return sequence.incrementAndGet();
+       }
+
+       public void reset() {
+           sequence.set(0);
+       }
+   }
+   ```
+
+Debugging AtomicLong Issues:
+----------------------------
+Common Problems and Solutions:
+
+1. Unexpected Values
+   - Check for race conditions in surrounding code
+   - Verify all accesses go through AtomicLong
+   - Look for non-atomic compound operations
+
+2. Performance Degradation
+   - Monitor CAS failure rate
+   - Check contention levels
+   - Consider LongAdder for high contention
+   - Profile with VisualVM or JProfiler
+
+3. Memory Visibility Issues
+   - Ensure no direct access to underlying value
+   - Check for improper use of lazySet()
+   - Verify happens-before relationships
+
+4. Deadlock-like Behavior
+   - CAS spin loops can appear as deadlock
+   - Check for infinite retry loops
+   - Add timeouts to retry logic
+
+Debugging Tools:
+- JConsole / VisualVM for monitoring
+- Thread dumps to see blocked threads
+- JFR (Java Flight Recorder) for profiling
+- Async profiler for CPU analysis
+
+Logging CAS Failures:
+```java
+int failures = 0;
+while (!atomic.compareAndSet(expected, newValue)) {
+    failures++;
+    if (failures > 100) {
+        log.warn("High CAS contention: {} failures", failures);
+    }
+    expected = atomic.get();
+}
+```
+
+Testing AtomicLong Code:
+------------------------
+Unit Testing Strategies:
+
+1. Basic Functionality Tests
+   ```java
+   @Test
+   public void testIncrement() {
+       AtomicLong counter = new AtomicLong(0);
+       assertEquals(1, counter.incrementAndGet());
+       assertEquals(1, counter.get());
+   }
+   ```
+
+2. Concurrency Tests
+   ```java
+   @Test
+   public void testConcurrentIncrement() throws InterruptedException {
+       AtomicLong counter = new AtomicLong(0);
+       int threadCount = 10;
+       int incrementsPerThread = 1000;
+
+       ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+       for (int i = 0; i < threadCount; i++) {
+           executor.submit(() -> {
+               for (int j = 0; j < incrementsPerThread; j++) {
+                   counter.incrementAndGet();
+               }
+           });
+       }
+       executor.shutdown();
+       executor.awaitTermination(1, TimeUnit.MINUTES);
+
+       assertEquals(threadCount * incrementsPerThread, counter.get());
+   }
+   ```
+
+3. Stress Tests
+   - Run with many threads
+   - High iteration counts
+   - Verify final state consistency
+
+4. Performance Tests
+   - Measure throughput
+   - Compare with alternatives
+   - Test under different contention levels
+
+5. ABA Problem Tests
+   - Test scenarios where ABA could occur
+   - Verify correct behavior with stamped references
+
+Testing Frameworks:
+- JUnit for unit tests
+- TestNG for concurrent tests
+- JMH for performance benchmarks
+- JCStress for concurrency stress testing
+
+Best Practices:
+---------------
+1. Choose the Right Tool
+   - AtomicLong: simple counters, low contention
+   - LongAdder: high-contention counters
+   - LongAccumulator: custom accumulation
+   - Synchronized: complex operations
+
+2. Minimize Contention
+   - Use thread-local variables when possible
+   - Batch updates
+   - Consider striping pattern
+
+3. Handle CAS Failures
+   - Always check return value
+   - Implement retry logic
+   - Add backoff for high contention
+
+4. Ensure Proper Visibility
+   - Use AtomicLong for all shared access
+   - Don't mix with regular long
+   - Understand happens-before
+
+5. Document Intent
+   - Comment on thread-safety guarantees
+   - Document invariants
+   - Explain atomic operations
+
+6. Test Thoroughly
+   - Unit tests for correctness
+   - Concurrency tests for thread-safety
+   - Performance tests for optimization
+
+7. Monitor in Production
+   - Track CAS failure rates
+   - Monitor contention
+   - Profile under load
+
+8. Avoid Common Pitfalls
+   - Don't assume atomicity across operations
+   - Don't ignore CAS failures
+   - Don't use in tight loops without backoff
+   - Don't forget about ABA problem
+
+Anti-Patterns to Avoid:
+-----------------------
+1. Compound Operations Without Sync
+   ```java
+   // WRONG: Not atomic
+   if (atomic.get() > threshold) {
+       atomic.set(atomic.get() - amount);
+   }
+   ```
+
+2. Ignoring Return Values
+   ```java
+   // WRONG: Doesn't handle failure
+   atomic.compareAndSet(expected, newValue);
+   ```
+
+3. Mixing Atomic and Non-Atomic Access
+   ```java
+   // WRONG: Breaks visibility guarantees
+   private long value;  // Not atomic
+   private AtomicLong atomicValue;
+   ```
+
+4. Using for Complex State
+   ```java
+   // WRONG: Multiple variables need sync
+   private AtomicLong x;
+   private AtomicLong y;
+   // Need to update x and y together atomically
+   ```
+
+5. Excessive Retries Without Backoff
+   ```java
+   // WRONG: Can cause CPU thrashing
+   while (!atomic.compareAndSet(expected, newValue)) {
+       expected = atomic.get();  // No backoff
+   }
+   ```
+
+Summary:
+--------
+AtomicLong is a powerful tool for thread-safe operations on long values:
+- Lock-free using CAS mechanism
+- Excellent performance under low to medium contention
+- Simple API for common operations
+- Provides visibility guarantees
+- Consider LongAdder for high-contention scenarios
+- Understand limitations and use cases
+- Test thoroughly for correctness
+- Monitor performance in production
+
+Key Takeaways:
+- Use for simple shared counters and state
+- Understand CAS and its limitations
+- Handle contention appropriately
+- Choose right tool for the job
+- Test concurrent code thoroughly
+- Monitor and tune based on workload
+
+================================================================================
+END OF NOTES
+================================================================================
