@@ -11,63 +11,30 @@ public class AtomicLongExample {
         basicOperations();
         System.out.println("\n--- Multithreading Example ---");
         multithreadingExample();
-        System.out.println("\n--- Advanced Operations ---");
-        advancedOperations();
+        System.out.println("\n--- Compare-And-Set Pattern ---");
+        compareAndSetPattern();
+        System.out.println("\n--- Functional Update ---");
+        functionalUpdate();
+        System.out.println("\n--- Accumulate Pattern ---");
+        accumulatePattern();
+        System.out.println("\n--- Lazy Initialization ---");
+        lazyInitialization();
+        System.out.println("\n--- Max/Min Tracking ---");
+        maxMinTracking();
+        System.out.println("\n--- Check-Then-Act Correct Pattern ---");
+        checkThenActCorrect();
     }
 
     private static void basicOperations() {
-        AtomicLong atomicLong = new AtomicLong(0);
+        AtomicLong counter = new AtomicLong(0);
 
-        System.out.println("Initial value: " + atomicLong.get());
-
-        atomicLong.set(10);
-        System.out.println("After set(10): " + atomicLong.get());
-
-        long currentValue = atomicLong.get();
-        System.out.println("Current value: " + currentValue);
-
-        long newValue = atomicLong.getAndSet(20);
-        System.out.println("getAndSet(20) returned: " + newValue);
-        System.out.println("After getAndSet(20): " + atomicLong.get());
-
-        newValue = atomicLong.getAndAdd(5);
-        System.out.println("getAndAdd(5) returned: " + newValue);
-        System.out.println("After getAndAdd(5): " + atomicLong.get());
-
-        newValue = atomicLong.addAndGet(5);
-        System.out.println("addAndGet(5) returned: " + newValue);
-        System.out.println("After addAndGet(5): " + atomicLong.get());
-
-        newValue = atomicLong.getAndIncrement();
-        System.out.println("getAndIncrement() returned: " + newValue);
-        System.out.println("After getAndIncrement(): " + atomicLong.get());
-
-        newValue = atomicLong.incrementAndGet();
-        System.out.println("incrementAndGet() returned: " + newValue);
-        System.out.println("After incrementAndGet(): " + atomicLong.get());
-
-        newValue = atomicLong.getAndDecrement();
-        System.out.println("getAndDecrement() returned: " + newValue);
-        System.out.println("After getAndDecrement(): " + atomicLong.get());
-
-        newValue = atomicLong.decrementAndGet();
-        System.out.println("decrementAndGet() returned: " + newValue);
-        System.out.println("After decrementAndGet(): " + atomicLong.get());
-
-        boolean wasUpdated = atomicLong.compareAndSet(24, 100);
-        System.out.println("compareAndSet(24, 100): " + wasUpdated);
-        System.out.println("After compareAndSet(24, 100): " + atomicLong.get());
-
-        wasUpdated = atomicLong.compareAndSet(100, 200);
-        System.out.println("compareAndSet(100, 200): " + wasUpdated);
-        System.out.println("After compareAndSet(100, 200): " + atomicLong.get());
-
-        System.out.println("Final value: " + atomicLong.get());
+        counter.incrementAndGet();
+        counter.incrementAndGet();
+        System.out.println("Simple counter: " + counter.get());
     }
 
     private static void multithreadingExample() throws InterruptedException {
         AtomicLong atomicCounter = new AtomicLong(0);
-        long regularCounter = 0;
 
         ExecutorService executor = Executors.newFixedThreadPool(THREAD_COUNT);
 
@@ -82,59 +49,81 @@ public class AtomicLongExample {
         executor.shutdown();
         executor.awaitTermination(5, TimeUnit.SECONDS);
 
-        System.out.println("Expected increments: " + (THREAD_COUNT * INCREMENTS_PER_THREAD));
-        System.out.println("Atomic counter result: " + atomicCounter.get());
-
-        ThreadSafeCounter threadSafeCounter = new ThreadSafeCounter();
-        ExecutorService executor2 = Executors.newFixedThreadPool(THREAD_COUNT);
-
-        for (int i = 0; i < THREAD_COUNT; i++) {
-            executor2.submit(() -> {
-                for (int j = 0; j < INCREMENTS_PER_THREAD; j++) {
-                    threadSafeCounter.increment();
-                }
-            });
-        }
-
-        executor2.shutdown();
-        executor2.awaitTermination(5, TimeUnit.SECONDS);
-
-        System.out.println("ThreadSafeCounter result: " + threadSafeCounter.get());
+        System.out.println("Expected: " + (THREAD_COUNT * INCREMENTS_PER_THREAD));
+        System.out.println("Atomic counter: " + atomicCounter.get());
     }
 
-    private static void advancedOperations() {
-        AtomicLong atomicLong = new AtomicLong(10);
+    private static void compareAndSetPattern() {
+        AtomicLong balance = new AtomicLong(100);
 
-        long oldValue = atomicLong.getAndUpdate(x -> x * 2);
-        System.out.println("getAndUpdate(x -> x * 2) returned: " + oldValue);
-        System.out.println("After getAndUpdate: " + atomicLong.get());
+        long current = balance.get();
+        long newBalance = current - 50;
+        if (balance.compareAndSet(current, newBalance)) {
+            System.out.println("Withdrawal successful");
+        } else {
+            System.out.println("Withdrawal failed");
+        }
 
-        long newValue = atomicLong.updateAndGet(x -> x + 5);
-        System.out.println("updateAndGet(x -> x + 5) returned: " + newValue);
-        System.out.println("After updateAndGet: " + atomicLong.get());
-
-        newValue = atomicLong.accumulateAndGet(5, (x, y) -> x * y);
-        System.out.println("accumulateAndGet(5, (x, y) -> x * y) returned: " + newValue);
-        System.out.println("After accumulateAndGet: " + atomicLong.get());
-
-        oldValue = atomicLong.getAndAccumulate(2, (x, y) -> x + y);
-        System.out.println("getAndAccumulate(2, (x, y) -> x + y) returned: " + oldValue);
-        System.out.println("After getAndAccumulate: " + atomicLong.get());
+        System.out.println("Balance: " + balance.get());
     }
 
-    static class ThreadSafeCounter {
-        private final AtomicLong counter = new AtomicLong(0);
+    private static void functionalUpdate() {
+        AtomicLong value = new AtomicLong(10);
 
-        public void increment() {
-            counter.incrementAndGet();
+        long result = value.updateAndGet(x -> x * 2);
+        System.out.println("After updateAndGet: " + value.get() + ", result: " + result);
+
+        long oldResult = value.getAndUpdate(x -> x + 5);
+        System.out.println("After getAndUpdate: " + value.get() + ", old: " + oldResult);
+    }
+
+    private static void accumulatePattern() {
+        AtomicLong sum = new AtomicLong(0);
+
+        sum.accumulateAndGet(5, Long::sum);
+        sum.accumulateAndGet(10, Long::sum);
+        sum.accumulateAndGet(3, Long::sum);
+
+        System.out.println("Sum: " + sum.get());
+    }
+
+    private static void lazyInitialization() {
+        AtomicLong cachedValue = new AtomicLong(-1);
+
+        long cached = cachedValue.get();
+        if (cached == -1) {
+            cached = 42;
+            cachedValue.compareAndSet(-1, cached);
         }
 
-        public void add(long value) {
-            counter.addAndGet(value);
+        System.out.println("Cached value: " + cachedValue.get());
+    }
+
+    private static void maxMinTracking() {
+        AtomicLong maxValue = new AtomicLong(Long.MIN_VALUE);
+        AtomicLong minValue = new AtomicLong(Long.MAX_VALUE);
+
+        maxValue.updateAndGet(x -> Math.max(x, 10));
+        maxValue.updateAndGet(x -> Math.max(x, 5));
+        maxValue.updateAndGet(x -> Math.max(x, 20));
+
+        minValue.updateAndGet(x -> Math.min(x, 10));
+        minValue.updateAndGet(x -> Math.min(x, 5));
+        minValue.updateAndGet(x -> Math.min(x, 20));
+
+        System.out.println("Max: " + maxValue.get());
+        System.out.println("Min: " + minValue.get());
+    }
+
+    private static void checkThenActCorrect() {
+        AtomicLong atomic = new AtomicLong(10);
+
+        while (true) {
+            long current = atomic.get();
+            if (current <= 0) break;
+            if (atomic.compareAndSet(current, current - 1)) break;
         }
 
-        public long get() {
-            return counter.get();
-        }
+        System.out.println("After decrement: " + atomic.get());
     }
 }
