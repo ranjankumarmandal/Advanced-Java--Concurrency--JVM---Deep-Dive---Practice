@@ -1,0 +1,506 @@
+AtomicBoolean - Short Notes
+
+What is AtomicBoolean?
+- Thread-safe boolean value
+- Provides atomic operations without synchronized keyword
+- Uses CAS (Compare-And-Swap) for lock-free operations
+- Part of java.util.concurrent.atomic package
+- Wrapper around volatile boolean with atomic operations
+
+Key Methods:
+- get() - read current value
+- set(value) - set new value
+- getAndSet(value) - return old, set new
+- compareAndSet(expected, newValue) - update only if matches expected
+- lazySet(value) - set with delayed visibility (performance optimization)
+
+Why Use AtomicBoolean?
+- No need for synchronized keyword
+- Lock-free algorithm using CAS
+- Better performance than synchronized blocks
+- No thread blocking
+- Simple API for boolean operations
+- Useful for flags and state indicators
+
+When to Use AtomicBoolean:
+- Shutdown flags for threads
+- One-time initialization flags
+- State machine transitions
+- Feature toggles
+- Lock acquisition/release indicators
+- Event notification flags
+- When you need atomic read-modify-write operations on boolean
+
+Benefits vs Synchronized:
+- No thread blocking/waiting
+- Lower overhead
+- Better cache performance
+- Avoids deadlocks
+- Simpler code for basic operations
+- Non-blocking algorithm
+- Volatile semantics built-in
+
+Limitations:
+- Only works on single boolean value
+- Not suitable for complex multi-variable operations
+- CAS can fail under high contention (spin loops)
+- Not a replacement for all synchronization needs
+- Limited to boolean operations only
+
+When NOT to Use:
+- Complex operations involving multiple variables
+- When you need to lock multiple resources together
+- When operations are not atomic by nature
+- When you need fairness guarantees
+- When you need to wait/notify patterns
+
+================================================================================
+PART 1: CORE CONCEPTS (Today's Learning)
+================================================================================
+
+CAS (Compare-And-Swap) for Boolean:
+-----------------------------------
+How CAS Works with Boolean:
+1. Read current boolean value from memory
+2. Compare with expected boolean value
+3. If matches, update to new boolean value atomically
+4. If doesn't match, operation fails (retry or handle)
+
+CAS Operation Flow:
+- CPU instruction: cmpxchg on x86
+- Atomic: all three steps happen as one indivisible operation
+- Optimistic: assumes no contention, retries if conflict occurs
+
+CAS Pseudocode for Boolean:
+```
+boolean compareAndSet(boolean expected, boolean newValue) {
+    if (currentValue == expected) {
+        currentValue = newValue;
+        return true;
+    }
+    return false;
+}
+```
+
+Boolean CAS Characteristics:
+- Only two possible values (true/false)
+- Simpler than integer/long CAS
+- Less contention possible (only 2 states)
+- Often used for one-time transitions (false -> true)
+
+Memory Model & Visibility:
+--------------------------
+Happens-Before Relationship:
+- Atomic operations establish happens-before
+- Guarantees visibility across threads
+- No need for volatile separately
+
+Volatile Semantics:
+- AtomicBoolean has volatile-like semantics
+- Writes are immediately visible to other threads
+- Prevents reordering of operations
+- Underlying field is volatile
+
+Memory Barrier Effects:
+- StoreStore barrier before write
+- StoreLoad barrier after write
+- LoadLoad barrier before read
+- LoadStore barrier after read
+
+Visibility Guarantees:
+- get() always sees latest set() value
+- All atomic methods have full visibility
+- No stale reads across threads
+- Changes are immediately visible to other threads
+
+LazySet vs Set:
+---------------
+What is lazySet()?
+- Sets value without full memory barrier
+- Delayed visibility to other threads
+- Performance optimization
+- Useful when immediate visibility not required
+
+set() Behavior:
+- Full memory barrier
+- Immediate visibility to all threads
+- Happens-before relationship established
+- Slower but safer
+
+lazySet() Behavior:
+- No full memory barrier
+- Visibility delayed (eventually consistent)
+- No happens-before guarantee
+- Faster but less safe
+
+When to Use lazySet():
+- Setting shutdown flag (thread will check periodically)
+- One-time initialization where exact timing doesn't matter
+- Performance-critical code where visibility delay acceptable
+- When you control all access patterns
+
+When NOT to Use lazySet():
+- When immediate visibility required
+- When other threads depend on immediate state change
+- Critical state transitions
+- When correctness depends on visibility timing
+
+Performance Characteristics:
+----------------------------
+Lock-Free vs Lock-Based:
+- Lock-free: no thread blocking
+- Lock-based: threads can block waiting
+- AtomicBoolean: lock-free using CAS
+
+Contention Levels:
+- Low contention: excellent performance
+- Medium contention: good performance with retries
+- High contention: performance degrades (spin loops)
+- Boolean has limited contention (only 2 states)
+
+CAS Spin Loop:
+```
+while (!compareAndSet(expected, newValue)) {
+    expected = get();  // re-read current value
+    // retry
+}
+```
+
+Performance Comparison:
+- AtomicBoolean vs synchronized: 2-10x faster (low contention)
+- AtomicBoolean vs volatile: supports read-modify-write
+- AtomicBoolean vs Boolean wrapper: thread-safe
+
+When CAS Fails:
+- Under high contention, CAS can fail repeatedly
+- CPU wastes cycles in spin loops
+- Consider backoff strategies
+- Consider synchronized for very high contention
+
+Code Examples:
+--------------
+Example 1: Simple Flag
+```java
+AtomicBoolean flag = new AtomicBoolean(false);
+
+// Thread 1
+flag.set(true);
+
+// Thread 2
+if (flag.get()) {
+    System.out.println("Flag is set");
+}
+```
+
+Example 2: Shutdown Flag
+```java
+AtomicBoolean shutdown = new AtomicBoolean(false);
+
+public void stop() {
+    shutdown.set(true);
+}
+
+public void run() {
+    while (!shutdown.get()) {
+        // do work
+    }
+}
+```
+
+Example 3: One-Time Initialization
+```java
+AtomicBoolean initialized = new AtomicBoolean(false);
+
+public void initialize() {
+    if (initialized.compareAndSet(false, true)) {
+        // initialization code runs only once
+        setupResources();
+    }
+}
+```
+
+Example 4: Get and Set
+```java
+AtomicBoolean flag = new AtomicBoolean(false);
+
+boolean oldValue = flag.getAndSet(true);
+// oldValue = false, flag = true
+
+oldValue = flag.getAndSet(false);
+// oldValue = true, flag = false
+```
+
+Example 5: Compare-And-Set Pattern
+```java
+AtomicBoolean locked = new AtomicBoolean(false);
+
+public boolean lock() {
+    return locked.compareAndSet(false, true);
+}
+
+public void unlock() {
+    locked.set(false);
+}
+```
+
+Example 6: Lazy Initialization with lazySet
+```java
+AtomicBoolean cacheValid = new AtomicBoolean(false);
+
+public void invalidateCache() {
+    cacheValid.lazySet(false);  // Delayed visibility OK
+}
+
+public boolean isCacheValid() {
+    return cacheValid.get();
+}
+```
+
+Common Patterns:
+---------------
+1. Shutdown Flag Pattern
+   - Use set(true) to signal shutdown
+   - Threads check get() periodically
+   - No need for immediate visibility
+   - Can use lazySet() for performance
+
+2. One-Time Initialization Pattern
+   - Use compareAndSet(false, true)
+   - Ensures initialization runs exactly once
+   - Thread-safe without synchronization
+   - Common for singleton initialization
+
+3. Lock Pattern (Simple Spin Lock)
+   - compareAndSet(false, true) to acquire
+   - set(false) to release
+   - Can cause spin loops under contention
+   - Consider backoff for better performance
+
+4. State Machine Pattern
+   - Use boolean to represent state
+   - Atomic transitions between states
+   - Useful for simple two-state machines
+   - For complex states, use AtomicInteger/Enum
+
+5. Feature Toggle Pattern
+   - Use AtomicBoolean for runtime feature flags
+   - Can be changed dynamically
+   - Thread-safe reads and writes
+   - Useful for A/B testing
+
+Advanced Usage:
+---------------
+compareAndSet() for One-Time Actions:
+- Ensures code runs exactly once
+- Common pattern for initialization
+- Thread-safe without locks
+- Returns true if operation succeeded
+
+getAndSet() for Toggle Operations:
+- Returns previous value
+- Sets new value atomically
+- Useful for toggle logic
+- Can detect state changes
+
+lazySet() for Performance:
+- Use when immediate visibility not required
+- Reduces memory barrier overhead
+- Good for flags checked periodically
+- Not suitable for critical sections
+
+Spin Lock with Backoff:
+```java
+AtomicBoolean lock = new AtomicBoolean(false);
+
+public void acquireLock() {
+    int attempts = 0;
+    while (!lock.compareAndSet(false, true)) {
+        attempts++;
+        if (attempts > 10) {
+            Thread.yield();  // or LockSupport.parkNanos
+        }
+    }
+}
+
+public void releaseLock() {
+    lock.set(false);
+}
+```
+
+Common Pitfalls:
+----------------
+1. Check-Then-Act Race Condition
+   WRONG:
+   ```java
+   if (!flag.get()) {
+       // Another thread might change here
+       flag.set(true);
+   }
+   ```
+   RIGHT:
+   ```java
+   flag.compareAndSet(false, true);
+   ```
+
+2. Assuming Atomicity Across Multiple Operations
+   - Only single operations are atomic
+   - Multiple operations need additional sync
+   - Compound operations require careful design
+
+3. Ignoring CAS Failure
+   - Always check return value
+   - Don't assume compareAndSet will succeed
+   - Handle failure appropriately
+
+4. Using lazySet() Incorrectly
+   - Don't use when immediate visibility needed
+   - Can cause subtle bugs
+   - Understand visibility implications
+
+5. Forgetting Visibility
+   - AtomicBoolean provides visibility
+   - Regular boolean does NOT
+   - Don't mix with non-atomic access
+
+6. Spin Lock Without Backoff
+   - Can cause CPU thrashing
+   - Add backoff for high contention
+   - Consider using LockSupport
+
+7. Using for Complex State
+   - Boolean only has 2 states
+   - Not suitable for multi-state machines
+   - Use AtomicInteger or Enum for complex state
+
+Real-World Use Cases:
+---------------------
+1. Thread Shutdown Flag
+   ```java
+   public class Worker {
+       private final AtomicBoolean running = new AtomicBoolean(true);
+
+       public void shutdown() {
+           running.set(false);
+       }
+
+       public void run() {
+           while (running.get()) {
+               processTask();
+           }
+       }
+   }
+   ```
+
+2. One-Time Resource Initialization
+   ```java
+   public class ResourceManager {
+       private final AtomicBoolean initialized = new AtomicBoolean(false);
+       private Resource resource;
+
+       public Resource getResource() {
+           if (initialized.compareAndSet(false, true)) {
+               resource = createResource();
+           }
+           return resource;
+       }
+   }
+   ```
+
+3. Feature Toggle
+   ```java
+   public class FeatureService {
+       private final AtomicBoolean newFeatureEnabled = new AtomicBoolean(false);
+
+       public void enableFeature() {
+           newFeatureEnabled.set(true);
+       }
+
+       public void executeFeature() {
+           if (newFeatureEnabled.get()) {
+               newFeatureLogic();
+           } else {
+               oldFeatureLogic();
+           }
+       }
+   }
+   ```
+
+4. Circuit Breaker State
+   ```java
+   public class CircuitBreaker {
+       private final AtomicBoolean circuitOpen = new AtomicBoolean(false);
+
+       public void recordFailure() {
+           circuitOpen.set(true);
+       }
+
+       public void recordSuccess() {
+           circuitOpen.set(false);
+       }
+
+       public boolean allowRequest() {
+           return !circuitOpen.get();
+       }
+   }
+   ```
+
+5. Simple Lock (for low contention)
+   ```java
+   public class SimpleLock {
+       private final AtomicBoolean locked = new AtomicBoolean(false);
+
+       public boolean tryLock() {
+           return locked.compareAndSet(false, true);
+       }
+
+       public void unlock() {
+           locked.set(false);
+       }
+   }
+   ```
+
+Best Practices:
+---------------
+1. Use for Simple Flags
+   - Shutdown flags
+   - Initialization flags
+   - State indicators
+   - Feature toggles
+
+2. Prefer compareAndSet() for One-Time Actions
+   - Ensures atomicity
+   - Returns success/failure
+   - Thread-safe without locks
+
+3. Use lazySet() When Appropriate
+   - When immediate visibility not required
+   - Performance-critical code
+   - Flags checked periodically
+   - Understand trade-offs
+
+4. Avoid Spin Locks for High Contention
+   - Use ReentrantLock instead
+   - Or use synchronized
+   - AtomicBoolean locks can cause CPU thrashing
+
+5. Document Intent
+   - Comment on thread-safety guarantees
+   - Document flag purposes
+   - Explain visibility requirements
+
+6. Test Thoroughly
+   - Unit tests for correctness
+   - Concurrency tests for thread-safety
+   - Test edge cases
+
+7. Monitor in Production
+   - Track CAS failure rates
+   - Monitor contention
+   - Profile under load
+
+================================================================================
+PART 2: ADVANCED TOPICS (Tomorrow's Learning)
+================================================================================
+[To be completed tomorrow: Advanced patterns, performance tuning,
+ real-world complex use cases, debugging, testing, comparison with
+ other synchronization mechanisms, etc.]
