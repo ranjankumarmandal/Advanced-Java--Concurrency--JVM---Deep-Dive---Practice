@@ -499,8 +499,628 @@ Best Practices:
    - Profile under load
 
 ================================================================================
-PART 2: ADVANCED TOPICS (Tomorrow's Learning)
+PART 2: ADVANCED TOPICS
 ================================================================================
-[To be completed tomorrow: Advanced patterns, performance tuning,
- real-world complex use cases, debugging, testing, comparison with
- other synchronization mechanisms, etc.]
+
+Advanced Patterns:
+------------------
+1. Double-Checked Locking with AtomicBoolean
+   ```java
+   public class Singleton {
+       private static volatile Singleton instance;
+       private static final AtomicBoolean initialized = new AtomicBoolean(false);
+
+       public static Singleton getInstance() {
+           if (instance == null) {
+               synchronized (Singleton.class) {
+                   if (instance == null && initialized.compareAndSet(false, true)) {
+                       instance = new Singleton();
+                   }
+               }
+           }
+           return instance;
+       }
+   }
+   ```
+
+2. Barrier Synchronization
+   ```java
+   public class Barrier {
+       private final AtomicBoolean released = new AtomicBoolean(false);
+       private final AtomicInteger waiting = new AtomicInteger(0);
+       private final int threshold;
+
+       public void await() throws InterruptedException {
+           waiting.incrementAndGet();
+           while (!released.get()) {
+               Thread.sleep(10);
+           }
+       }
+
+       public void release() {
+           released.set(true);
+       }
+   }
+   ```
+
+3. Toggle Switch with State Tracking
+   ```java
+   public class ToggleSwitch {
+       private final AtomicBoolean state = new AtomicBoolean(false);
+       private final AtomicInteger toggleCount = new AtomicInteger(0);
+
+       public boolean toggle() {
+       boolean oldState = state.getAndSet(!state.get());
+           if (oldState != state.get()) {
+               toggleCount.incrementAndGet();
+           }
+           return state.get();
+       }
+
+       public int getToggleCount() {
+           return toggleCount.get();
+       }
+   }
+   ```
+
+4. Guarded Suspension Pattern
+   ```java
+   public class GuardedSuspension {
+       private final AtomicBoolean ready = new AtomicBoolean(false);
+       private String result;
+
+       public String get() throws InterruptedException {
+           while (!ready.get()) {
+               Thread.sleep(10);
+           }
+           return result;
+       }
+
+       public void set(String value) {
+           result = value;
+           ready.set(true);
+       }
+   }
+   ```
+
+5. Bounded Semaphore with AtomicBoolean
+   ```java
+   public class SimpleSemaphore {
+       private final AtomicInteger permits;
+       private final AtomicBoolean[] slots;
+
+       public SimpleSemaphore(int maxPermits) {
+           this.permits = new AtomicInteger(maxPermits);
+           this.slots = new AtomicBoolean[maxPermits];
+           for (int i = 0; i < maxPermits; i++) {
+               slots[i] = new AtomicBoolean(true);
+           }
+       }
+
+       public boolean acquire() {
+           for (int i = 0; i < slots.length; i++) {
+               if (slots[i].compareAndSet(true, false)) {
+                   permits.decrementAndGet();
+                   return true;
+               }
+           }
+           return false;
+       }
+
+       public void release(int slotIndex) {
+           if (slotIndex >= 0 && slotIndex < slots.length) {
+               slots[slotIndex].set(true);
+               permits.incrementAndGet();
+           }
+       }
+   }
+   ```
+
+Performance Tuning:
+-------------------
+1. Cache Line Padding
+   - AtomicBoolean already has @Contended annotation in Java 8+
+   - Prevents false sharing from cache lines
+   - Important for high-frequency updates
+   - Reduces cache coherence traffic
+
+2. Contention Reduction Strategies
+   - Use thread-local flags when possible
+   - Reduce frequency of updates
+   - Batch operations
+   - Use lazySet() for non-critical updates
+
+3. Backoff Strategies
+   ```java
+   public void acquireWithBackoff(AtomicBoolean lock) {
+       int attempts = 0;
+       while (!lock.compareAndSet(false, true)) {
+           attempts++;
+           if (attempts < 5) {
+               Thread.yield();
+           } else if (attempts < 10) {
+               LockSupport.parkNanos(1000);
+           } else {
+               LockSupport.parkNanos(10000);
+           }
+       }
+   }
+   ```
+
+4. Read-Write Optimization
+   - Use volatile for read-heavy scenarios
+   - Use AtomicBoolean for write-heavy scenarios
+   - Consider read-write locks for mixed workloads
+
+5. JVM Tuning
+   - -XX:+UseCondCardMark for card marking optimization
+   - -XX:CompileThreshold for JIT compilation tuning
+   - -XX:+UseBiasedLocking for lock optimization
+
+Comparison with Other Mechanisms:
+---------------------------------
+AtomicBoolean vs Volatile Boolean:
+- AtomicBoolean: supports read-modify-write operations
+- Volatile: only supports simple read/write
+- AtomicBoolean: compareAndSet for atomic updates
+- Volatile: no atomic compound operations
+- AtomicBoolean: slightly higher overhead
+- Volatile: lower overhead for simple reads/writes
+
+AtomicBoolean vs Synchronized:
+- AtomicBoolean: lock-free, non-blocking
+- Synchronized: can block threads
+- AtomicBoolean: better performance under low contention
+- Synchronized: better under high contention
+- AtomicBoolean: no fairness guarantees
+- Synchronized: provides fairness
+- AtomicBoolean: simpler for single operations
+- Synchronized: better for complex operations
+
+AtomicBoolean vs ReentrantLock:
+- AtomicBoolean: simpler, less overhead
+- ReentrantLock: more features (tryLock, timeout, interruptible)
+- AtomicBoolean: lock-free
+- ReentrantLock: can block
+- AtomicBoolean: no reentrancy
+- ReentrantLock: supports reentrancy
+- AtomicBoolean: good for simple flags
+- ReentrantLock: good for critical sections
+
+AtomicBoolean vs CountDownLatch:
+- AtomicBoolean: reusable, state can change back
+- CountDownLatch: one-time use, counts down to zero
+- AtomicBoolean: simple boolean state
+- CountDownLatch: counter-based synchronization
+- AtomicBoolean: for flags and state
+- CountDownLatch: for waiting on multiple events
+
+Debugging AtomicBoolean Issues:
+------------------------------
+Common Problems and Solutions:
+
+1. Stale Reads
+   - Cause: Not using AtomicBoolean for shared access
+   - Solution: Ensure all accesses go through AtomicBoolean
+   - Check: Look for direct field access
+
+2. Unexpected State Changes
+   - Cause: Race conditions in compound operations
+   - Solution: Use compareAndSet for atomic updates
+   - Check: Review check-then-act patterns
+
+3. Performance Degradation
+   - Cause: High contention on CAS operations
+   - Solution: Add backoff, use lazySet, consider alternatives
+   - Check: Profile CAS failure rates
+
+4. Visibility Issues
+   - Cause: Using lazySet() incorrectly
+   - Solution: Use set() when immediate visibility needed
+   - Check: Review lazySet() usage
+
+5. Deadlock-like Behavior
+   - Cause: Spin loops without backoff
+   - Solution: Add timeouts or backoff
+   - Check: Look for infinite retry loops
+
+Debugging Tools:
+- JConsole / VisualVM for monitoring
+- Thread dumps to see blocked threads
+- JFR (Java Flight Recorder) for profiling
+- Async profiler for CPU analysis
+- YourKit for detailed profiling
+
+Logging State Changes:
+```java
+public class DebuggableFlag {
+    private final AtomicBoolean flag = new AtomicBoolean(false);
+
+    public void setFlag(boolean value) {
+        boolean old = flag.getAndSet(value);
+        log.debug("Flag changed from {} to {}", old, value);
+    }
+
+    public boolean compareAndSetFlag(boolean expected, boolean newValue) {
+        boolean result = flag.compareAndSet(expected, newValue);
+        if (!result) {
+            log.warn("CAS failed: expected {}, actual {}", expected, flag.get());
+        }
+        return result;
+    }
+}
+```
+
+Testing AtomicBoolean Code:
+---------------------------
+Unit Testing Strategies:
+
+1. Basic Functionality Tests
+   ```java
+   @Test
+   public void testSetAndGet() {
+       AtomicBoolean flag = new AtomicBoolean(false);
+       flag.set(true);
+       assertTrue(flag.get());
+   }
+   ```
+
+2. CompareAndSet Tests
+   ```java
+   @Test
+   public void testCompareAndSet() {
+       AtomicBoolean flag = new AtomicBoolean(false);
+       assertTrue(flag.compareAndSet(false, true));
+       assertFalse(flag.compareAndSet(false, true));
+       assertTrue(flag.get());
+   }
+   ```
+
+3. Concurrency Tests
+   ```java
+   @Test
+   public void testConcurrentAccess() throws InterruptedException {
+       AtomicBoolean flag = new AtomicBoolean(false);
+       AtomicInteger successCount = new AtomicInteger(0);
+
+       ExecutorService executor = Executors.newFixedThreadPool(10);
+       for (int i = 0; i < 10; i++) {
+           executor.submit(() -> {
+               if (flag.compareAndSet(false, true)) {
+                   successCount.incrementAndGet();
+               }
+           });
+       }
+
+       executor.shutdown();
+       executor.awaitTermination(5, TimeUnit.SECONDS);
+
+       assertEquals(1, successCount.get());
+   }
+   ```
+
+4. One-Time Initialization Tests
+   ```java
+   @Test
+   public void testOneTimeInitialization() throws InterruptedException {
+       AtomicBoolean initialized = new AtomicBoolean(false);
+       AtomicInteger initCount = new AtomicInteger(0);
+
+       ExecutorService executor = Executors.newFixedThreadPool(10);
+       for (int i = 0; i < 10; i++) {
+           executor.submit(() -> {
+               if (initialized.compareAndSet(false, true)) {
+                   initCount.incrementAndGet();
+               }
+           });
+       }
+
+       executor.shutdown();
+       executor.awaitTermination(5, TimeUnit.SECONDS);
+
+       assertEquals(1, initCount.get());
+   }
+   ```
+
+5. Performance Tests
+   - Measure throughput of operations
+   - Compare with volatile and synchronized
+   - Test under different contention levels
+   - Use JMH for accurate benchmarks
+
+Testing Frameworks:
+- JUnit for unit tests
+- TestNG for concurrent tests
+- JMH for performance benchmarks
+- JCStress for concurrency stress testing
+
+Real-World Complex Use Cases:
+-----------------------------
+1. Distributed System Leader Election
+   ```java
+   public class LeaderElection {
+       private final AtomicBoolean isLeader = new AtomicBoolean(false);
+       private final AtomicBoolean electionInProgress = new AtomicBoolean(false);
+
+       public boolean tryBecomeLeader() {
+           if (electionInProgress.compareAndSet(false, true)) {
+               try {
+                   return isLeader.compareAndSet(false, true);
+               } finally {
+                   electionInProgress.set(false);
+               }
+           }
+           return false;
+       }
+
+       public void stepDown() {
+           isLeader.set(false);
+       }
+
+       public boolean amILeader() {
+           return isLeader.get();
+       }
+   }
+   ```
+
+2. Rate Limiter with Circuit Breaker
+   ```java
+   public class AdvancedCircuitBreaker {
+       private final AtomicBoolean circuitOpen = new AtomicBoolean(false);
+       private final AtomicBoolean halfOpen = new AtomicBoolean(false);
+       private final AtomicInteger failureCount = new AtomicInteger(0);
+       private final AtomicInteger successCount = new AtomicInteger(0);
+       private final int failureThreshold;
+       private final int successThreshold;
+
+       public boolean allowRequest() {
+           if (circuitOpen.get()) {
+               if (halfOpen.compareAndSet(false, true)) {
+                   successCount.set(0);
+                   return true;
+               }
+               return false;
+           }
+           return true;
+       }
+
+       public void recordSuccess() {
+           if (halfOpen.get()) {
+               if (successCount.incrementAndGet() >= successThreshold) {
+                   circuitOpen.set(false);
+                   halfOpen.set(false);
+                   failureCount.set(0);
+               }
+           }
+       }
+
+       public void recordFailure() {
+           if (!circuitOpen.get()) {
+               if (failureCount.incrementAndGet() >= failureThreshold) {
+                   circuitOpen.set(true);
+                   halfOpen.set(false);
+               }
+           } else {
+               halfOpen.set(false);
+           }
+       }
+   }
+   ```
+
+3. Thread Pool State Management
+   ```java
+   public class ThreadPoolManager {
+       private final AtomicBoolean isRunning = new AtomicBoolean(false);
+       private final AtomicBoolean isShuttingDown = new AtomicBoolean(false);
+       private final AtomicBoolean isTerminated = new AtomicBoolean(false);
+       private final ExecutorService executor;
+
+       public void start() {
+           if (isRunning.compareAndSet(false, true)) {
+               executor = Executors.newFixedThreadPool(10);
+           }
+       }
+
+       public void shutdown() {
+           if (isShuttingDown.compareAndSet(false, true)) {
+               executor.shutdown();
+           }
+       }
+
+       public void awaitTermination() throws InterruptedException {
+           if (executor.awaitTermination(30, TimeUnit.SECONDS)) {
+               isTerminated.set(true);
+               isRunning.set(false);
+           }
+       }
+
+       public boolean isRunning() {
+           return isRunning.get();
+       }
+   }
+   ```
+
+4. Cache Invalidation Strategy
+   ```java
+   public class CacheManager<K, V> {
+       private final Map<K, V> cache = new ConcurrentHashMap<>();
+       private final AtomicBoolean isValid = new AtomicBoolean(true);
+       private final AtomicBoolean refreshInProgress = new AtomicBoolean(false);
+
+       public V get(K key) {
+           if (!isValid.get()) {
+               waitForRefresh();
+           }
+           return cache.get(key);
+       }
+
+       public void invalidate() {
+           isValid.lazySet(false);
+       }
+
+       public void refresh() {
+           if (refreshInProgress.compareAndSet(false, true)) {
+               try {
+                   cache.clear();
+                   loadFreshData();
+                   isValid.set(true);
+               } finally {
+                   refreshInProgress.set(false);
+               }
+           }
+       }
+
+       private void waitForRefresh() {
+           while (refreshInProgress.get()) {
+               LockSupport.parkNanos(1000000);
+           }
+       }
+   }
+   ```
+
+5. Feature Flag with Gradual Rollout
+   ```java
+   public class FeatureFlagService {
+       private final AtomicBoolean enabled = new AtomicBoolean(false);
+       private final AtomicBoolean rollingOut = new AtomicBoolean(false);
+       private final AtomicInteger rolloutPercentage = new AtomicInteger(0);
+       private final AtomicInteger userCount = new AtomicInteger(0);
+
+       public boolean isEnabledForUser(String userId) {
+           if (!enabled.get() && !rollingOut.get()) {
+               return false;
+           }
+
+           if (enabled.get()) {
+               return true;
+           }
+
+           int hash = Math.abs(userId.hashCode() % 100);
+           return hash < rolloutPercentage.get();
+       }
+
+       public void startRollout(int percentage) {
+           if (rollingOut.compareAndSet(false, true)) {
+               rolloutPercentage.set(percentage);
+           }
+       }
+
+       public void completeRollout() {
+           enabled.set(true);
+           rollingOut.set(false);
+           rolloutPercentage.set(100);
+       }
+
+       public void disable() {
+           enabled.set(false);
+           rollingOut.set(false);
+           rolloutPercentage.set(0);
+       }
+   }
+   ```
+
+Anti-Patterns to Avoid:
+-----------------------
+1. Using AtomicBoolean as Mutex
+   WRONG:
+   ```java
+   while (!lock.compareAndSet(false, true)) {
+       // No backoff - CPU thrashing
+   }
+   ```
+   RIGHT: Use ReentrantLock or add backoff
+
+2. Ignoring Return Value of compareAndSet
+   WRONG:
+   ```java
+   flag.compareAndSet(false, true);
+   // Assumes it succeeded
+   ```
+   RIGHT: Check return value and handle failure
+
+3. Using lazySet() for Critical State
+   WRONG:
+   ```java
+   criticalState.lazySet(true);
+   // Other threads might not see this immediately
+   ```
+   RIGHT: Use set() for critical state changes
+
+4. Compound Operations Without Sync
+   WRONG:
+   ```java
+   if (flag.get()) {
+       doSomething();
+       flag.set(false);
+   }
+   ```
+   RIGHT: Use compareAndSet or additional synchronization
+
+5. Mixing Atomic and Non-Atomic Access
+   WRONG:
+   ```java
+   private boolean flag;  // Not atomic
+   private AtomicBoolean atomicFlag;
+   ```
+   RIGHT: Use AtomicBoolean for all shared access
+
+6. Using for Complex State Machines
+   WRONG:
+   ```java
+   private final AtomicBoolean state1 = new AtomicBoolean(false);
+   private final AtomicBoolean state2 = new AtomicBoolean(false);
+   private final AtomicBoolean state3 = new AtomicBoolean(false);
+   ```
+   RIGHT: Use Enum or AtomicInteger for complex state
+
+7. Spin Lock Without Timeout
+   WRONG:
+   ```java
+   while (!lock.compareAndSet(false, true)) {
+       // Infinite loop possible
+   }
+   ```
+   RIGHT: Add timeout or backoff
+
+Summary:
+--------
+AtomicBoolean is a powerful tool for thread-safe boolean operations:
+- Lock-free using CAS mechanism
+- Excellent performance under low to medium contention
+- Simple API for boolean operations
+- Provides visibility guarantees
+- Ideal for flags and state indicators
+- Supports lazySet for performance optimization
+- Not suitable for complex state or high-contention locks
+- Understand limitations and use cases
+- Test thoroughly for correctness
+- Monitor performance in production
+
+Key Takeaways:
+- Use for simple flags and state indicators
+- Prefer compareAndSet for one-time actions
+- Use lazySet() when immediate visibility not required
+- Avoid spin locks for high contention
+- Understand visibility implications
+- Test concurrent code thoroughly
+- Monitor and tune based on workload
+- Choose right tool for the job
+
+When to Choose AtomicBoolean:
+- Simple boolean flags
+- Shutdown signals
+- One-time initialization
+- Feature toggles
+- State indicators
+- Low-contention scenarios
+
+When to Choose Alternatives:
+- Complex state machines: use Enum or AtomicInteger
+- High-contention locks: use ReentrantLock
+- Complex synchronization: use synchronized
+- Counting: use AtomicInteger or LongAdder
+- Waiting on conditions: use Condition or CountDownLatch
+
+================================================================================
+END OF NOTES
+================================================================================
