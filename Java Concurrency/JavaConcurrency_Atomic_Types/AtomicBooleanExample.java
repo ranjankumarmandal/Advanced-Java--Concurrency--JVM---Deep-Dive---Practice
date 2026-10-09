@@ -10,6 +10,16 @@ public class AtomicBooleanExample {
         compareAndSet();
         System.out.println("\n--- Lazy Set ---");
         lazySet();
+        System.out.println("\n--- Shutdown Flag ---");
+        shutdownFlag();
+        System.out.println("\n--- One-Time Initialization ---");
+        oneTimeInitialization();
+        System.out.println("\n--- Feature Toggle ---");
+        featureToggle();
+        System.out.println("\n--- Simple Lock ---");
+        simpleLock();
+        System.out.println("\n--- Toggle Switch ---");
+        toggleSwitch();
     }
 
     private static void basicOperations() {
@@ -60,5 +70,68 @@ public class AtomicBooleanExample {
 
         flag.lazySet(false);
         System.out.println("After lazySet(false): " + flag.get());
+    }
+
+    private static void shutdownFlag() {
+        AtomicBoolean running = new AtomicBoolean(true);
+
+        System.out.println("Running: " + running.get());
+
+        running.set(false);
+        System.out.println("After shutdown: " + running.get());
+    }
+
+    private static void oneTimeInitialization() {
+        AtomicBoolean initialized = new AtomicBoolean(false);
+
+        boolean success = initialized.compareAndSet(false, true);
+        System.out.println("First initialization: " + success);
+
+        success = initialized.compareAndSet(false, true);
+        System.out.println("Second initialization attempt: " + success);
+
+        System.out.println("Initialized: " + initialized.get());
+    }
+
+    private static void featureToggle() {
+        AtomicBoolean featureEnabled = new AtomicBoolean(false);
+
+        System.out.println("Feature enabled: " + featureEnabled.get());
+
+        featureEnabled.set(true);
+        System.out.println("After enable: " + featureEnabled.get());
+
+        if (featureEnabled.get()) {
+            System.out.println("Using new feature logic");
+        }
+
+        featureEnabled.set(false);
+        System.out.println("After disable: " + featureEnabled.get());
+    }
+
+    private static void simpleLock() {
+        AtomicBoolean locked = new AtomicBoolean(false);
+
+        boolean acquired = locked.compareAndSet(false, true);
+        System.out.println("Lock acquired: " + acquired);
+        System.out.println("Locked: " + locked.get());
+
+        locked.set(false);
+        System.out.println("After unlock: " + locked.get());
+
+        acquired = locked.compareAndSet(false, true);
+        System.out.println("Lock acquired again: " + acquired);
+    }
+
+    private static void toggleSwitch() {
+        AtomicBoolean state = new AtomicBoolean(false);
+
+        System.out.println("Initial state: " + state.get());
+
+        state.set(!state.get());
+        System.out.println("After toggle: " + state.get());
+
+        state.set(!state.get());
+        System.out.println("After toggle: " + state.get());
     }
 }
