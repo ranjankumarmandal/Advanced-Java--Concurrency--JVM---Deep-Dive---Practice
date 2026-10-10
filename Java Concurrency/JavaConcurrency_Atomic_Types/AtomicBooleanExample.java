@@ -1,4 +1,5 @@
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class AtomicBooleanExample {
 
@@ -20,6 +21,14 @@ public class AtomicBooleanExample {
         simpleLock();
         System.out.println("\n--- Toggle Switch ---");
         toggleSwitch();
+        System.out.println("\n--- Circuit Breaker ---");
+        circuitBreaker();
+        System.out.println("\n--- Guarded Suspension ---");
+        guardedSuspension();
+        System.out.println("\n--- Toggle with Count ---");
+        toggleWithCount();
+        System.out.println("\n--- State Machine ---");
+        stateMachine();
     }
 
     private static void basicOperations() {
@@ -133,5 +142,85 @@ public class AtomicBooleanExample {
 
         state.set(!state.get());
         System.out.println("After toggle: " + state.get());
+    }
+
+    private static void circuitBreaker() {
+        AtomicBoolean circuitOpen = new AtomicBoolean(false);
+        AtomicInteger failureCount = new AtomicInteger(0);
+
+        System.out.println("Circuit open: " + circuitOpen.get());
+        System.out.println("Failures: " + failureCount.get());
+
+        failureCount.incrementAndGet();
+        if (failureCount.get() >= 3) {
+            circuitOpen.set(true);
+        }
+
+        System.out.println("After failures - Circuit open: " + circuitOpen.get());
+        System.out.println("Request allowed: " + !circuitOpen.get());
+
+        circuitOpen.set(false);
+        failureCount.set(0);
+        System.out.println("Circuit reset - Request allowed: " + !circuitOpen.get());
+    }
+
+    private static void guardedSuspension() {
+        AtomicBoolean ready = new AtomicBoolean(false);
+        String result = null;
+
+        System.out.println("Ready: " + ready.get());
+
+        result = "Data loaded";
+        ready.set(true);
+
+        System.out.println("After set ready: " + ready.get());
+
+        if (ready.get()) {
+            System.out.println("Result: " + result);
+        }
+    }
+
+    private static void toggleWithCount() {
+        AtomicBoolean state = new AtomicBoolean(false);
+        AtomicInteger toggleCount = new AtomicInteger(0);
+
+        System.out.println("Initial state: " + state.get());
+        System.out.println("Toggle count: " + toggleCount.get());
+
+        boolean oldState = state.getAndSet(!state.get());
+        if (oldState != state.get()) {
+            toggleCount.incrementAndGet();
+        }
+
+        System.out.println("After toggle 1 - State: " + state.get());
+        System.out.println("Toggle count: " + toggleCount.get());
+
+        oldState = state.getAndSet(!state.get());
+        if (oldState != state.get()) {
+            toggleCount.incrementAndGet();
+        }
+
+        System.out.println("After toggle 2 - State: " + state.get());
+        System.out.println("Toggle count: " + toggleCount.get());
+    }
+
+    private static void stateMachine() {
+        AtomicBoolean stateA = new AtomicBoolean(true);
+        AtomicBoolean stateB = new AtomicBoolean(false);
+
+        System.out.println("State A: " + stateA.get());
+        System.out.println("State B: " + stateB.get());
+
+        stateA.set(false);
+        stateB.set(true);
+
+        System.out.println("After transition - State A: " + stateA.get());
+        System.out.println("After transition - State B: " + stateB.get());
+
+        stateB.set(false);
+        stateA.set(true);
+
+        System.out.println("After transition back - State A: " + stateA.get());
+        System.out.println("After transition back - State B: " + stateB.get());
     }
 }
