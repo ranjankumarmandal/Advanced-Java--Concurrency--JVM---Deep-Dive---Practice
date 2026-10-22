@@ -1,9 +1,13 @@
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.LockSupport;
 
 public class AtomicBooleanExample {
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws InterruptedException {
         basicOperations();
         System.out.println("\n--- Get and Set ---");
         getAndSet();
@@ -29,6 +33,14 @@ public class AtomicBooleanExample {
         toggleWithCount();
         System.out.println("\n--- State Machine ---");
         stateMachine();
+        System.out.println("\n--- Multithreading Shutdown ---");
+        multithreadingShutdown();
+        System.out.println("\n--- Concurrent Initialization ---");
+        concurrentInitialization();
+        System.out.println("\n--- Leader Election ---");
+        leaderElection();
+        System.out.println("\n--- Backoff Lock ---");
+        backoffLock();
     }
 
     private static void basicOperations() {
@@ -222,5 +234,130 @@ public class AtomicBooleanExample {
 
         System.out.println("After transition back - State A: " + stateA.get());
         System.out.println("After transition back - State B: " + stateB.get());
+    }
+
+    private static void multithreadingShutdown() throws InterruptedException {
+        AtomicBoolean running = new AtomicBoolean(true);
+        AtomicInteger workDone = new AtomicInteger(0);
+
+        ExecutorService executor = Executors.newFixedThreadPool(3);
+
+        for (int i = 0; i < 3; i++) {
+            executor.submit(() -> {
+                while (running.get()) {
+                    workDone.incrementAndGet();
+                    try {
+                        Thread.sleep(10);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+                System.out.println("Worker stopped");
+            });
+        }
+
+        Thread.sleep(100);
+        running.set(false);
+
+        executor.shutdown();
+        executor.awaitTermination(2, TimeUnit.SECONDS);
+
+        System.out.println("Work completed: " + workDone.get());
+    }
+
+    private static void concurrentInitialization() throws InterruptedException {
+        AtomicBoolean initialized = new AtomicBoolean(false);
+        AtomicInteger initCount = new AtomicInteger(0);
+        AtomicInteger successCount = new AtomicInteger(0);
+
+        ExecutorService executor = Executors.newFixedThreadPool(10);
+
+        for (int i = 0; i < 10; i++) {
+            executor.submit(() -> {
+                initCount.incrementAndGet();
+                if (initialized.compareAndSet(false, true)) {
+                    successCount.incrementAndGet();
+                    System.out.println("Initialization completed by thread");
+                }
+            });
+        }
+
+        executor.shutdown();
+        executor.awaitTermination(2, TimeUnit.SECONDS);
+
+        System.out.println("Initialization attempts: " + initCount.get());
+        System.out.println("Successful initializations: " + successCount.get());
+        System.out.println("Initialized: " + initialized.get());
+    }
+
+    private static void leaderElection() throws InterruptedException {
+        AtomicBoolean isLeader = new AtomicBoolean(false);
+        AtomicInteger leaderCount = new AtomicInteger(0);
+
+        ExecutorService executor = Executors.newFixedThreadPool(5);
+
+        for (int i = 0; i < 5; i++) {
+            final int nodeId = i;
+            executor.submit(() -> {
+                if (isLeader.compareAndSet(false, true)) {
+                    leaderCount.incrementAndGet();
+                    System.out.println("Node " + nodeId + " became leader");
+                    try {
+                        Thread.sleep(100);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    isLeader.set(false);
+                    System.out.println("Node " + nodeId + " stepped down");
+                } else {
+                    System.out.println("Node " + nodeId + " failed to become leader");
+                }
+            });
+        }
+
+        executor.shutdown();
+        executor.awaitTermination(2, TimeUnit.SECONDS);
+
+        System.out.println("Leaders elected: " + leaderCount.get());
+    }
+
+    private static void backoffLock() throws InterruptedException {
+        AtomicBoolean lock = new AtomicBoolean(false);
+        AtomicInteger acquiredCount = new AtomicInteger(0);
+        AtomicInteger contentionCount = new AtomicInteger(0);
+
+        ExecutorService executor = Executors.newFixedThreadPool(5);
+
+        for (int i = 0; i < 5; i++) {
+            executor.submit(() -> {
+                int attempts = 0;
+                while (true) {
+                    if (lock.compareAndSet(false, true)) {
+                        acquiredCount.incrementAndGet();
+                        try {
+                            Thread.sleep(50);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        } finally {
+                            lock.set(false);
+                        }
+                        break;
+                    }
+                    attempts++;
+                    contentionCount.incrementAndGet();
+                    if (attempts < 3) {
+                        Thread.yield();
+                    } else {
+                        LockSupport.parkNanos(1000000);
+                    }
+                }
+            });
+        }
+
+        executor.shutdown();
+        executor.awaitTermination(5, TimeUnit.SECONDS);
+
+        System.out.println("Lock acquisitions: " + acquiredCount.get());
+        System.out.println("Contention events: " + contentionCount.get());
     }
 }
