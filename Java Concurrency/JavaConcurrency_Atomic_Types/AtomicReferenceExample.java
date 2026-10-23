@@ -1,4 +1,6 @@
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicStampedReference;
+import java.util.concurrent.atomic.AtomicMarkableReference;
 
 public class AtomicReferenceExample {
 
@@ -22,6 +24,14 @@ public class AtomicReferenceExample {
         latestValueHolder();
         System.out.println("\n--- Accumulate Pattern ---");
         accumulatePattern();
+        System.out.println("\n--- ABA Problem ---");
+        abaProblem();
+        System.out.println("\n--- AtomicStampedReference ---");
+        atomicStampedReference();
+        System.out.println("\n--- AtomicMarkableReference ---");
+        atomicMarkableReference();
+        System.out.println("\n--- Optimistic Locking ---");
+        optimisticLocking();
     }
 
     private static void basicOperations() {
@@ -168,5 +178,94 @@ public class AtomicReferenceExample {
 
         builder.accumulateAndGet("World", (a, b) -> a + b);
         System.out.println("After accumulate World: " + builder.get());
+    }
+
+    private static void abaProblem() {
+        AtomicReference<String> ref = new AtomicReference<>("A");
+
+        System.out.println("Initial: " + ref.get());
+
+        ref.set("B");
+        System.out.println("After set B: " + ref.get());
+
+        ref.set("A");
+        System.out.println("After set A: " + ref.get());
+
+        boolean success = ref.compareAndSet("A", "C");
+        System.out.println("CAS A->C succeeded: " + success);
+        System.out.println("Final value: " + ref.get());
+    }
+
+    private static void atomicStampedReference() {
+        AtomicStampedReference<String> ref = new AtomicStampedReference<>("A", 0);
+
+        int[] stampHolder = new int[1];
+        String value = ref.get(stampHolder);
+        System.out.println("Initial - Value: " + value + ", Stamp: " + stampHolder[0]);
+
+        ref.compareAndSet("A", "B", 0, 1);
+        value = ref.get(stampHolder);
+        System.out.println("After A->B - Value: " + value + ", Stamp: " + stampHolder[0]);
+
+        ref.compareAndSet("B", "A", 1, 2);
+        value = ref.get(stampHolder);
+        System.out.println("After B->A - Value: " + value + ", Stamp: " + stampHolder[0]);
+
+        boolean success = ref.compareAndSet("A", "C", 0, 3);
+        System.out.println("CAS A->C with stamp 0 succeeded: " + success);
+        System.out.println("Final value: " + ref.getReference() + ", Stamp: " + ref.getStamp());
+    }
+
+    private static void atomicMarkableReference() {
+        AtomicMarkableReference<String> ref = new AtomicMarkableReference<>("A", false);
+
+        boolean[] markHolder = new boolean[1];
+        String value = ref.get(markHolder);
+        System.out.println("Initial - Value: " + value + ", Marked: " + markHolder[0]);
+
+        ref.compareAndSet("A", "B", false, true);
+        value = ref.get(markHolder);
+        System.out.println("After A->B - Value: " + value + ", Marked: " + markHolder[0]);
+
+        ref.compareAndSet("B", "A", true, false);
+        value = ref.get(markHolder);
+        System.out.println("After B->A - Value: " + value + ", Marked: " + markHolder[0]);
+
+        boolean success = ref.compareAndSet("A", "C", false, true);
+        System.out.println("CAS A->C with mark false succeeded: " + success);
+        System.out.println("Final value: " + ref.getReference() + ", Marked: " + ref.isMarked());
+    }
+
+    private static void optimisticLocking() {
+        class VersionedValue {
+            private final String value;
+            private final int version;
+
+            VersionedValue(String value, int version) {
+                this.value = value;
+                this.version = version;
+            }
+
+            String getValue() {
+                return value;
+            }
+
+            int getVersion() {
+                return version;
+            }
+        }
+
+        AtomicReference<VersionedValue> ref = new AtomicReference<>(
+            new VersionedValue("initial", 0)
+        );
+
+        System.out.println("Initial value: " + ref.get().getValue() + ", version: " + ref.get().getVersion());
+
+        VersionedValue current = ref.get();
+        VersionedValue newValue = new VersionedValue("updated", current.getVersion() + 1);
+        boolean success = ref.compareAndSet(current, newValue);
+
+        System.out.println("Update succeeded: " + success);
+        System.out.println("Final value: " + ref.get().getValue() + ", version: " + ref.get().getVersion());
     }
 }
