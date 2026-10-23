@@ -1,10 +1,15 @@
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicStampedReference;
 import java.util.concurrent.atomic.AtomicMarkableReference;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.LockSupport;
 
 public class AtomicReferenceExample {
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws InterruptedException {
         basicOperations();
         System.out.println("\n--- Get and Set ---");
         getAndSet();
@@ -32,6 +37,12 @@ public class AtomicReferenceExample {
         atomicMarkableReference();
         System.out.println("\n--- Optimistic Locking ---");
         optimisticLocking();
+        System.out.println("\n--- Concurrent Initialization ---");
+        concurrentInitialization();
+        System.out.println("\n--- Concurrent Config Update ---");
+        concurrentConfigUpdate();
+        System.out.println("\n--- Backoff Reference Update ---");
+        backoffReferenceUpdate();
     }
 
     private static void basicOperations() {
@@ -267,5 +278,118 @@ public class AtomicReferenceExample {
 
         System.out.println("Update succeeded: " + success);
         System.out.println("Final value: " + ref.get().getValue() + ", version: " + ref.get().getVersion());
+    }
+
+    private static void concurrentInitialization() throws InterruptedException {
+        AtomicReference<String> initialized = new AtomicReference<>(null);
+        AtomicInteger initCount = new AtomicInteger(0);
+        AtomicInteger successCount = new AtomicInteger(0);
+
+        ExecutorService executor = Executors.newFixedThreadPool(10);
+
+        for (int i = 0; i < 10; i++) {
+            executor.submit(() -> {
+                initCount.incrementAndGet();
+                if (initialized.compareAndSet(null, "Initialized by thread")) {
+                    successCount.incrementAndGet();
+                    System.out.println("Initialization completed");
+                }
+            });
+        }
+
+        executor.shutdown();
+        executor.awaitTermination(2, TimeUnit.SECONDS);
+
+        System.out.println("Initialization attempts: " + initCount.get());
+        System.out.println("Successful initializations: " + successCount.get());
+        System.out.println("Initialized value: " + initialized.get());
+    }
+
+    private static void concurrentConfigUpdate() throws InterruptedException {
+        class Config {
+            private final String name;
+            private final int value;
+
+            Config(String name, int value) {
+                this.name = name;
+                this.value = value;
+            }
+
+            String getName() {
+                return name;
+            }
+
+            int getValue() {
+                return value;
+            }
+        }
+
+        AtomicReference<Config> configRef = new AtomicReference<>(new Config("default", 0));
+        AtomicInteger updateCount = new AtomicInteger(0);
+
+        ExecutorService executor = Executors.newFixedThreadPool(5);
+
+        for (int i = 0; i < 5; i++) {
+            final int threadId = i;
+            executor.submit(() -> {
+                while (true) {
+                    Config current = configRef.get();
+                    Config newConfig = new Config("config-" + threadId, current.getValue() + 1);
+                    if (configRef.compareAndSet(current, newConfig)) {
+                        updateCount.incrementAndGet();
+                        break;
+                    }
+                }
+            });
+        }
+
+        executor.shutdown();
+        executor.awaitTermination(2, TimeUnit.SECONDS);
+
+        System.out.println("Successful updates: " + updateCount.get());
+        System.out.println("Final config: " + configRef.get().getName() + ", value: " + configRef.get().getValue());
+    }
+
+    private static void backoffReferenceUpdate() throws InterruptedException {
+        AtomicReference<String> ref = new AtomicReference<>("initial");
+        AtomicInteger acquiredCount = new AtomicInteger(0);
+        AtomicInteger contentionCount = new AtomicInteger(0);
+
+        ExecutorService executor = Executors.newFixedThreadPool(5);
+
+        for (int i = 0; i < 5; i++) {
+            final int threadId = i;
+            executor.submit(() -> {
+                int attempts = 0;
+                while (true) {
+                    String current = ref.get();
+                    String newValue = "thread-" + threadId;
+                    if (ref.compareAndSet(current, newValue)) {
+                        acquiredCount.incrementAndGet();
+                        try {
+                            Thread.sleep(50);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        } finally {
+                            ref.set("initial");
+                        }
+                        break;
+                    }
+                    attempts++;
+                    contentionCount.incrementAndGet();
+                    if (attempts < 3) {
+                        Thread.yield();
+                    } else {
+                        LockSupport.parkNanos(1000000);
+                    }
+                }
+            });
+        }
+
+        executor.shutdown();
+        executor.awaitTermination(5, TimeUnit.SECONDS);
+
+        System.out.println("Successful acquisitions: " + acquiredCount.get());
+        System.out.println("Contention events: " + contentionCount.get());
     }
 }
