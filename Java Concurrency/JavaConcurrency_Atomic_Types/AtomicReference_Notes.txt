@@ -587,8 +587,662 @@ Best Practices:
    - Profile under load
 
 ================================================================================
-PART 2: ADVANCED TOPICS (Tomorrow's Learning)
+PART 2: ADVANCED TOPICS
 ================================================================================
-[To be completed tomorrow: AtomicStampedReference, AtomicMarkableReference,
- performance tuning, real-world complex use cases, debugging, testing,
- comparison with other synchronization mechanisms, etc.]
+
+AtomicStampedReference<V>:
+---------------------------
+What is AtomicStampedReference?
+- Solves the ABA problem with version stamps
+- Maintains reference and integer stamp together
+- Atomically updates both reference and stamp
+- Part of java.util.concurrent.atomic package
+
+Key Methods:
+- get(reference, stampHolder) - get current reference and stamp
+- getReference() - get current reference
+- getStamp() - get current stamp
+- set(newReference, newStamp) - set new reference and stamp
+- compareAndSet(expectedRef, newRef, expectedStamp, newStamp) - conditional update
+- attemptStamp(expectedRef, newStamp) - update stamp only if reference unchanged
+
+How It Solves ABA:
+- Each reference update increments stamp
+- CAS checks both reference AND stamp
+- Even if reference returns to same value, stamp differs
+- Prevents ABA problem
+
+Example:
+```java
+AtomicStampedReference<String> ref = new AtomicStampedReference<>("A", 0);
+
+int[] stampHolder = new int[1];
+String value = ref.get(stampHolder);
+System.out.println("Value: " + value + ", Stamp: " + stampHolder[0]);
+
+ref.compareAndSet("A", "B", 0, 1);
+ref.compareAndSet("B", "A", 1, 2);
+
+// Even though reference is "A" again, stamp is 2, not 0
+boolean success = ref.compareAndSet("A", "C", 0, 3);
+// success = false because stamp doesn't match
+```
+
+When to Use:
+- When ABA problem is a concern
+- With mutable objects that can be reused
+- In linked data structures
+- When version tracking is important
+- For optimistic locking with versioning
+
+AtomicMarkableReference<V>:
+---------------------------
+What is AtomicMarkableReference?
+- Solves ABA problem with boolean mark
+- Maintains reference and boolean mark together
+- Atomically updates both reference and mark
+- Part of java.util.concurrent.atomic package
+
+Key Methods:
+- get(reference, markHolder) - get current reference and mark
+- getReference() - get current reference
+- isMarked() - get current mark
+- set(newReference, newMark) - set new reference and mark
+- compareAndSet(expectedRef, newRef, expectedMark, newMark) - conditional update
+- attemptMark(expectedRef, newMark) - update mark only if reference unchanged
+- weakCompareAndSet(expectedRef, newRef, expectedMark, newMark) - weak CAS
+
+How It Solves ABA:
+- Uses boolean mark instead of integer stamp
+- Simpler than stamped reference
+- Good for binary state tracking
+- CAS checks both reference AND mark
+
+Example:
+```java
+AtomicMarkableReference<String> ref = new AtomicMarkableReference<>("A", false);
+
+boolean[] markHolder = new boolean[1];
+String value = ref.get(markHolder);
+System.out.println("Value: " + value + ", Marked: " + markHolder[0]);
+
+ref.compareAndSet("A", "B", false, true);
+ref.compareAndSet("B", "A", true, false);
+
+// Even though reference is "A" again, mark differs
+boolean success = ref.compareAndSet("A", "C", false, true);
+// success = false because mark doesn't match
+```
+
+When to Use:
+- When ABA problem is a concern
+- Simple binary state tracking
+- When boolean mark is sufficient
+- For deletion/recycling markers
+- When integer stamp is overkill
+
+Comparison: AtomicStampedReference vs AtomicMarkableReference:
+- Stamped: Integer stamp, unlimited versions
+- Markable: Boolean mark, 2 states only
+- Stamped: More flexible, slightly more overhead
+- Markable: Simpler, less overhead
+- Stamped: For complex versioning
+- Markable: For simple binary state
+
+Performance Tuning:
+-------------------
+1. Cache Line Padding
+   - AtomicReference already has @Contended annotation in Java 8+
+   - Prevents false sharing from cache lines
+   - Important for high-frequency updates
+   - Reduces cache coherence traffic
+
+2. Contention Reduction Strategies
+   - Use thread-local references when possible
+   - Reduce frequency of updates
+   - Batch operations
+   - Use lazySet() for non-critical updates
+   - Consider striped references for high contention
+
+3. Backoff Strategies
+   ```java
+   public void updateWithBackoff(AtomicReference<Object> ref, Object newValue) {
+       int attempts = 0;
+       Object current = ref.get();
+       while (true) {
+           if (ref.compareAndSet(current, newValue)) {
+               break;
+           }
+           attempts++;
+           current = ref.get();
+           if (attempts < 5) {
+               Thread.yield();
+           } else if (attempts < 10) {
+               LockSupport.parkNanos(1000);
+           } else {
+               LockSupport.parkNanos(10000);
+           }
+       }
+   }
+   ```
+
+4. Object Allocation Optimization
+   - Reuse objects when possible
+   - Use object pools for frequently created objects
+   - Consider flyweight pattern
+   - Reduce GC pressure
+
+5. Read-Write Optimization
+   - Use volatile for read-heavy scenarios
+   - Use AtomicReference for write-heavy scenarios
+   - Consider read-write locks for mixed workloads
+   - Profile to determine best approach
+
+6. Immutable Object Design
+   - Make objects immutable when possible
+   - Use final fields
+   - Defensive copying in constructors
+   - No setters, only getters
+   - Thread-safe by design
+
+Comparison with Other Mechanisms:
+---------------------------------
+AtomicReference vs Volatile Reference:
+- AtomicReference: supports read-modify-write operations
+- Volatile: only supports simple read/write
+- AtomicReference: compareAndSet for atomic updates
+- Volatile: no atomic compound operations
+- AtomicReference: slightly higher overhead
+- Volatile: lower overhead for simple reads/writes
+
+AtomicReference vs Synchronized:
+- AtomicReference: lock-free, non-blocking
+- Synchronized: can block threads
+- AtomicReference: better performance under low contention
+- Synchronized: better under high contention
+- AtomicReference: no fairness guarantees
+- Synchronized: provides fairness
+- AtomicReference: simpler for single operations
+- Synchronized: better for complex operations
+
+AtomicReference vs ReentrantLock:
+- AtomicReference: simpler, less overhead
+- ReentrantLock: more features (tryLock, timeout, interruptible)
+- AtomicReference: lock-free
+- ReentrantLock: can block
+- AtomicReference: no reentrancy
+- ReentrantLock: supports reentrancy
+- AtomicReference: good for simple reference updates
+- ReentrantLock: good for critical sections
+
+AtomicReference vs CopyOnWriteArrayList:
+- AtomicReference: single reference, simpler
+- CopyOnWriteArrayList: collection of references
+- AtomicReference: better for single shared object
+- CopyOnWriteArrayList: better for collections
+- AtomicReference: lower memory overhead
+- CopyOnWriteArrayList: higher memory overhead on writes
+
+Debugging AtomicReference Issues:
+---------------------------------
+Common Problems and Solutions:
+
+1. Stale References
+   - Cause: Not using AtomicReference for shared access
+   - Solution: Ensure all accesses go through AtomicReference
+   - Check: Look for direct field access
+
+2. Unexpected Reference Changes
+   - Cause: Race conditions in compound operations
+   - Solution: Use compareAndSet for atomic updates
+   - Check: Review check-then-act patterns
+
+3. Performance Degradation
+   - Cause: High contention on CAS operations
+   - Solution: Add backoff, use lazySet, consider alternatives
+   - Check: Profile CAS failure rates
+
+4. Visibility Issues
+   - Cause: Using lazySet() incorrectly
+   - Solution: Use set() when immediate visibility needed
+   - Check: Review lazySet() usage
+
+5. Object State Visibility
+   - Cause: Assuming object internals are visible
+   - Solution: Use immutable objects or synchronize object access
+   - Check: Review object mutability
+
+6. ABA Problem
+   - Cause: Mutable objects being reused
+   - Solution: Use AtomicStampedReference or immutable objects
+   - Check: Look for object reuse patterns
+
+Debugging Tools:
+- JConsole / VisualVM for monitoring
+- Thread dumps to see blocked threads
+- JFR (Java Flight Recorder) for profiling
+- Async profiler for CPU analysis
+- YourKit for detailed profiling
+- Heap dumps for object analysis
+
+Logging Reference Changes:
+```java
+public class DebuggableReference<T> {
+    private final AtomicReference<T> ref;
+
+    public void setReference(T value) {
+        T old = ref.getAndSet(value);
+        log.debug("Reference changed from {} to {}", old, value);
+    }
+
+    public boolean compareAndSetReference(T expected, T newValue) {
+        boolean result = ref.compareAndSet(expected, newValue);
+        if (!result) {
+            log.warn("CAS failed: expected {}, actual {}", expected, ref.get());
+        }
+        return result;
+    }
+}
+```
+
+Testing AtomicReference Code:
+-----------------------------
+Unit Testing Strategies:
+
+1. Basic Functionality Tests
+   ```java
+   @Test
+   public void testSetAndGet() {
+       AtomicReference<String> ref = new AtomicReference<>("Hello");
+       ref.set("World");
+       assertEquals("World", ref.get());
+   }
+   ```
+
+2. CompareAndSet Tests
+   ```java
+   @Test
+   public void testCompareAndSet() {
+       AtomicReference<String> ref = new AtomicReference<>("Hello");
+       assertTrue(ref.compareAndSet("Hello", "World"));
+       assertFalse(ref.compareAndSet("Hello", "World"));
+       assertEquals("World", ref.get());
+   }
+   ```
+
+3. Concurrency Tests
+   ```java
+   @Test
+   public void testConcurrentAccess() throws InterruptedException {
+       AtomicReference<String> ref = new AtomicReference<>("initial");
+       AtomicInteger successCount = new AtomicInteger(0);
+
+       ExecutorService executor = Executors.newFixedThreadPool(10);
+       for (int i = 0; i < 10; i++) {
+           final int threadId = i;
+           executor.submit(() -> {
+               if (ref.compareAndSet("initial", "thread-" + threadId)) {
+                   successCount.incrementAndGet();
+               }
+           });
+       }
+
+       executor.shutdown();
+       executor.awaitTermination(5, TimeUnit.SECONDS);
+
+       assertEquals(1, successCount.get());
+   }
+   ```
+
+4. Immutable Object Update Tests
+   ```java
+   @Test
+   public void testImmutableUpdate() throws InterruptedException {
+       AtomicReference<ImmutableState> ref = new AtomicReference<>(
+           new ImmutableState(0)
+       );
+
+       ExecutorService executor = Executors.newFixedThreadPool(10);
+       for (int i = 0; i < 10; i++) {
+           final int increment = 1;
+           executor.submit(() -> {
+               while (true) {
+                   ImmutableState current = ref.get();
+                   ImmutableState newState = new ImmutableState(
+                       current.getValue() + increment
+                   );
+                   if (ref.compareAndSet(current, newState)) {
+                       break;
+                   }
+               }
+           });
+       }
+
+       executor.shutdown();
+       executor.awaitTermination(5, TimeUnit.SECONDS);
+
+       assertEquals(10, ref.get().getValue());
+   }
+   ```
+
+5. ABA Problem Tests
+   ```java
+   @Test
+   public void testABAProblem() {
+       AtomicReference<String> ref = new AtomicReference<>("A");
+
+       ref.set("B");
+       ref.set("A");
+
+       // CAS might succeed even though reference changed
+       boolean success = ref.compareAndSet("A", "C");
+       assertTrue(success);  // This demonstrates ABA problem
+   }
+
+   @Test
+   public void testABASolutionWithStamp() {
+       AtomicStampedReference<String> ref = new AtomicStampedReference<>("A", 0);
+
+       ref.compareAndSet("A", "B", 0, 1);
+       ref.compareAndSet("B", "A", 1, 2);
+
+       // CAS fails because stamp doesn't match
+       boolean success = ref.compareAndSet("A", "C", 0, 3);
+       assertFalse(success);  // ABA problem solved
+   }
+   ```
+
+Testing Frameworks:
+- JUnit for unit tests
+- TestNG for concurrent tests
+- JMH for performance benchmarks
+- JCStress for concurrency stress testing
+
+Real-World Complex Use Cases:
+-----------------------------
+1. Distributed Configuration Management
+   ```java
+   public class DistributedConfigManager {
+       private final AtomicReference<Config> configRef;
+       private final AtomicStampedReference<Config> versionedConfig;
+
+       public void updateConfig(Config newConfig) {
+           while (true) {
+               Config current = configRef.get();
+               if (configRef.compareAndSet(current, newConfig)) {
+                   notifyListeners(newConfig);
+                   break;
+               }
+           }
+       }
+
+       public void updateConfigWithVersion(Config newConfig) {
+           int[] stampHolder = new int[1];
+           Config current = versionedConfig.get(stampHolder);
+           int newStamp = stampHolder[0] + 1;
+           if (versionedConfig.compareAndSet(current, newConfig,
+                   stampHolder[0], newStamp)) {
+               notifyListeners(newConfig, newStamp);
+           }
+       }
+   }
+   ```
+
+2. Thread-Safe Cache with Eviction
+   ```java
+   public class Cache<K, V> {
+       private final AtomicReference<V> cachedValue;
+       private final AtomicStampedReference<V> versionedCache;
+       private final AtomicBoolean refreshInProgress;
+
+       public V get(K key, Function<K, V> loader) {
+           V value = cachedValue.get();
+           if (value == null && !refreshInProgress.get()) {
+               if (refreshInProgress.compareAndSet(false, true)) {
+                   try {
+                       value = loader.apply(key);
+                       cachedValue.set(value);
+                   } finally {
+                       refreshInProgress.set(false);
+                   }
+               }
+           }
+           return cachedValue.get();
+       }
+
+       public void invalidate() {
+           cachedValue.set(null);
+       }
+   }
+   ```
+
+3. Lock-Free Stack
+   ```java
+   public class LockFreeStack<T> {
+       private static class Node<T> {
+           final T value;
+           Node<T> next;
+
+           Node(T value) {
+               this.value = value;
+           }
+       }
+
+       private final AtomicReference<Node<T>> head = new AtomicReference<>();
+
+       public void push(T value) {
+           Node<T> newNode = new Node<>(value);
+           while (true) {
+               Node<T> currentHead = head.get();
+               newNode.next = currentHead;
+               if (head.compareAndSet(currentHead, newNode)) {
+                   break;
+               }
+           }
+       }
+
+       public T pop() {
+           while (true) {
+               Node<T> currentHead = head.get();
+               if (currentHead == null) {
+                   return null;
+               }
+               Node<T> newHead = currentHead.next;
+               if (head.compareAndSet(currentHead, newHead)) {
+                   return currentHead.value;
+               }
+           }
+       }
+   }
+   ```
+
+4. Optimistic Concurrent Map Entry
+   ```java
+   public class OptimisticEntry<K, V> {
+       private final AtomicStampedReference<V> valueRef;
+
+       public OptimisticEntry(V initialValue) {
+           this.valueRef = new AtomicStampedReference<>(initialValue, 0);
+       }
+
+       public V get() {
+           return valueRef.getReference();
+       }
+
+       public boolean update(V expected, V newValue) {
+           int[] stampHolder = new int[1];
+           valueRef.get(stampHolder);
+           return valueRef.compareAndSet(expected, newValue,
+                   stampHolder[0], stampHolder[0] + 1);
+       }
+
+       public int getVersion() {
+           return valueRef.getStamp();
+       }
+   }
+   ```
+
+5. Event Sourcing with Versioning
+   ```java
+   public class EventStore {
+       private final AtomicReference<List<Event>> eventLog;
+       private final AtomicStampedReference<List<Event>> versionedLog;
+
+       public void appendEvent(Event event) {
+           while (true) {
+               List<Event> current = eventLog.get();
+               List<Event> newLog = new ArrayList<>(current);
+               newLog.add(event);
+               if (eventLog.compareAndSet(current, newLog)) {
+                   break;
+               }
+           }
+       }
+
+       public void appendEventWithVersion(Event event) {
+           int[] stampHolder = new int[1];
+           List<Event> current = versionedLog.get(stampHolder);
+           List<Event> newLog = new ArrayList<>(current);
+           newLog.add(event);
+           int newStamp = stampHolder[0] + 1;
+           versionedLog.compareAndSet(current, newLog,
+                   stampHolder[0], newStamp);
+       }
+   }
+   ```
+
+6. Snapshot Isolation
+   ```java
+   public class SnapshotManager<T> {
+       private final AtomicReference<T> currentState;
+       private final AtomicReference<List<T>> snapshots;
+
+       public T getCurrentState() {
+           return currentState.get();
+       }
+
+       public void updateState(T newState) {
+           currentState.set(newState);
+       }
+
+       public T takeSnapshot() {
+           T state = currentState.get();
+           List<T> snapshotList = snapshots.get();
+           List<T> newSnapshotList = new ArrayList<>(snapshotList);
+           newSnapshotList.add(state);
+           snapshots.compareAndSet(snapshotList, newSnapshotList);
+           return state;
+       }
+
+       public List<T> getSnapshots() {
+           return new ArrayList<>(snapshots.get());
+       }
+   }
+   ```
+
+Anti-Patterns to Avoid:
+-----------------------
+1. Using AtomicReference for Mutable Object State
+   WRONG:
+   ```java
+   AtomicReference<MutableObject> ref = new AtomicReference<>(new MutableObject());
+   ref.get().setValue(10);  // Not atomic!
+   ```
+   RIGHT: Use immutable objects or synchronize object access
+
+2. Ignoring CAS Return Value
+   WRONG:
+   ```java
+   ref.compareAndSet(expected, newValue);
+   // Assumes it succeeded
+   ```
+   RIGHT: Check return value and handle failure
+
+3. Using lazySet() for Critical State
+   WRONG:
+   ```java
+   criticalRef.lazySet(newValue);
+   // Other threads might not see this immediately
+   ```
+   RIGHT: Use set() for critical reference changes
+
+4. Compound Operations Without Sync
+   WRONG:
+   ```java
+   if (ref.get() == null) {
+       doSomething();
+       ref.set(newValue);
+   }
+   ```
+   RIGHT: Use compareAndSet or additional synchronization
+
+5. Mixing Atomic and Non-Atomic Access
+   WRONG:
+   ```java
+   private Object value;  // Not atomic
+   private AtomicReference<Object> atomicValue;
+   ```
+   RIGHT: Use AtomicReference for all shared access
+
+6. Assuming Object Internals Are Thread-Safe
+   WRONG:
+   ```java
+   AtomicReference<List<String>> listRef = new AtomicReference<>(new ArrayList<>());
+   listRef.get().add("item");  // Not thread-safe!
+   ```
+   RIGHT: Use immutable collections or synchronize access
+
+7. Not Handling ABA Problem
+   WRONG:
+   ```java
+   AtomicReference<Node> headRef = new AtomicReference<>();
+   // In a linked list, ABA can cause issues
+   ```
+   RIGHT: Use AtomicStampedReference for versioning
+
+Summary:
+--------
+AtomicReference is a powerful tool for thread-safe reference operations:
+- Lock-free using CAS mechanism
+- Excellent performance under low to medium contention
+- Simple API for reference operations
+- Provides visibility guarantees
+- Ideal for shared object references
+- Supports lazySet for performance optimization
+- ABA problem can occur with mutable objects
+- Use AtomicStampedReference/AtomicMarkableReference for ABA safety
+- Not suitable for complex state or high-contention locks
+- Understand limitations and use cases
+- Test thoroughly for correctness
+- Monitor performance in production
+
+Key Takeaways:
+- Use for shared object references
+- Prefer immutable objects
+- Prefer compareAndSet for conditional updates
+- Use lazySet() when immediate visibility not required
+- Understand ABA problem and solutions
+- Ensure object thread-safety separately
+- Test concurrent code thoroughly
+- Monitor and tune based on workload
+
+When to Choose AtomicReference:
+- Shared object references
+- Immutable object updates
+- Cache implementations
+- Configuration management
+- State management
+- Optimistic locking
+- Low-contention scenarios
+
+When to Choose Alternatives:
+- Complex state machines: use Enum or custom state classes
+- High-contention locks: use ReentrantLock
+- Complex synchronization: use synchronized
+- Collections: use concurrent collections
+- Version tracking: use AtomicStampedReference
+- Binary state: use AtomicMarkableReference
+
+================================================================================
+END OF NOTES
+================================================================================
